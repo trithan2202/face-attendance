@@ -1,13 +1,11 @@
-from backend.app.core.database import Base, engine
-import backend.app.models
+"""Legacy helper kept to point developers to the migration workflow."""
 
 
 def main():
-    Base.metadata.create_all(
-        bind=engine
+    raise RuntimeError(
+        "Không dùng create_all nữa. Hãy chạy scripts/migrate.ps1 hoặc "
+        "python -m alembic upgrade head."
     )
-
-    print("[OK] Database tables created")
 
 
 if __name__ == "__main__":

@@ -1,27 +1,24 @@
 import time
-from datetime import datetime
+import logging
 
 import cv2
 
-from attendance.attendance_service import (
-    AttendanceService
-)
 from backend.app.core.config import settings
-from backend.app.core.database import (
-    get_db_session
-)
 from camera.capture import CameraCapture
 from camera.embedding_cache import EmbeddingCache
 from camera.stabilizer import RecognitionStabilizer
 from face_engine import FaceEngine, FaceMatcher
+from backend.app.services import WorkerStatusService
+from backend.app.core.logging import log_extra
+
+
+logger = logging.getLogger("face_attendance.worker")
 
 
 class RecognitionWorker:
     def __init__(
         self,
-        camera_source=0,
-        cooldown_seconds=10,
-        min_checkout_minutes=60
+        camera_source=0
     ):
         self.camera = CameraCapture(
             camera_source
@@ -42,29 +39,26 @@ class RecognitionWorker:
             required_hits=3
         )
 
-        self.attendance = AttendanceService(
-            min_checkout_minutes=(
-                min_checkout_minutes
-            )
-        )
-
-        self.cooldown_seconds = (
-            cooldown_seconds
-        )
-
-        self.last_processed = {}
+        self.status = WorkerStatusService()
+        self.last_heartbeat = 0.0
 
     def run(self):
-        count = self.cache.refresh()
-
-        print(
-            f"[INFO] Loaded {count} employees"
-        )
-
-        self.camera.open()
+        self.status.write("STARTING", False, True, "Worker đang khởi động")
+        failed = False
 
         try:
+            count = self.cache.refresh()
+
+            logger.info(
+                "Worker face cache loaded",
+                extra=log_extra("worker_cache_loaded", employee_count=count),
+            )
+
+            self.camera.open()
+            self._heartbeat(force=True)
+
             while True:
+                self._heartbeat()
                 ok, frame = self.camera.read()
 
                 if not ok:
@@ -108,13 +102,6 @@ class RecognitionWorker:
                     confirmed_code
                 )
 
-                if confirmed_code:
-                    self._process_attendance(
-                        confirmed_code,
-                        similarity,
-                        float(face.det_score)
-                    )
-
                 cv2.imshow(
                     "Attendance Worker",
                     frame
@@ -123,66 +110,31 @@ class RecognitionWorker:
                 if self._should_quit():
                     break
 
+        except Exception as exc:
+            failed = True
+            self.status.write("ERROR", False, True, f"Worker lỗi: {type(exc).__name__}")
+            logger.exception(
+                "Recognition worker failed",
+                extra=log_extra(
+                    "worker_failed", exception_type=type(exc).__name__
+                ),
+            )
+            raise
         finally:
             self.camera.release()
             cv2.destroyAllWindows()
+            if not failed:
+                self.status.write("STOPPED", False, True, "Worker đã dừng")
+                logger.info("Recognition worker stopped", extra=log_extra("worker_stopped"))
 
-    def _process_attendance(
-        self,
-        employee_code,
-        similarity,
-        detection_score
-    ):
-        now_monotonic = time.monotonic()
-
-        last = self.last_processed.get(
-            employee_code
-        )
-
-        if (
-            last is not None
-            and now_monotonic - last
-            < self.cooldown_seconds
-        ):
+    def _heartbeat(self, force=False):
+        now = time.monotonic()
+        if not force and now - self.last_heartbeat < 2:
             return
-
-        employee = self.cache.get_employee(
-            employee_code
-        )
-
-        if employee is None:
-            return
-
-        db = get_db_session()
-
-        try:
-            result = self.attendance.process(
-                db,
-                employee_id=(
-                    employee["employee_id"]
-                ),
-                recognized_at=datetime.now(),
-                similarity=similarity,
-                detection_score=detection_score
-            )
-
-            if result:
-                self.last_processed[
-                    employee_code
-                ] = now_monotonic
-
-                print(
-                    f"[ATTENDANCE] "
-                    f"{employee_code} "
-                    f"{result['event_type']}"
-                )
-
-        except Exception:
-            db.rollback()
-            raise
-
-        finally:
-            db.close()
+        self.status.write("READY", True, True, "Camera và model sẵn sàng")
+        if force:
+            logger.info("Recognition worker ready", extra=log_extra("worker_ready"))
+        self.last_heartbeat = now
 
     @staticmethod
     def _draw(

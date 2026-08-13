@@ -1,14 +1,21 @@
+from backend.app.core.config import settings
+from backend.app.core.logging import configure_logging
+from backend.app.services import WorkerStatusService
 from camera.worker import RecognitionWorker
 
 
 def main():
-    worker = RecognitionWorker(
-        camera_source=0,
-        cooldown_seconds=10,
-        min_checkout_minutes=1 # Test tạm sửa lại 1 phút, để ban đầu là 60p
-    )
-
-    worker.run()
+    configure_logging(settings.LOG_LEVEL)
+    status = WorkerStatusService()
+    status.write("STARTING", False, False, "Đang tải model nhận diện")
+    try:
+        worker = RecognitionWorker(
+            camera_source=settings.CAMERA_INDEX
+        )
+        worker.run()
+    except Exception as exc:
+        status.write("ERROR", False, False, f"Không thể chạy worker: {type(exc).__name__}")
+        raise
 
 
 if __name__ == "__main__":

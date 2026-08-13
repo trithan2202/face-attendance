@@ -20,10 +20,10 @@ class FaceQualityChecker:
         height = y2 - y1
 
         if width < self.min_face_size or height < self.min_face_size:
-            return False, "Face too small"
+            return False, "Khuôn mặt quá nhỏ"
 
         if float(face.det_score) < self.min_det_score:
-            return False, "Low detection score"
+            return False, "Độ tin cậy phát hiện khuôn mặt quá thấp"
 
         h, w = frame.shape[:2]
 
@@ -35,7 +35,7 @@ class FaceQualityChecker:
         face_crop = frame[y1:y2, x1:x2]
 
         if face_crop.size == 0:
-            return False, "Invalid face crop"
+            return False, "Vùng khuôn mặt không hợp lệ"
 
         gray = cv2.cvtColor(
             face_crop,
@@ -48,6 +48,6 @@ class FaceQualityChecker:
         ).var()
 
         if blur_score < self.blur_threshold:
-            return False, f"Blurred ({blur_score:.0f})"
+            return False, f"Hình ảnh bị mờ ({blur_score:.0f})"
 
-        return True, f"Good ({blur_score:.0f})"
+        return True, f"Chất lượng đạt ({blur_score:.0f})"

@@ -6,7 +6,7 @@ Tạo demo điểm danh khuôn mặt chạy hoàn toàn trên một máy Windows
 
 ## Vai trò
 
-- **Quản trị viên:** đăng nhập, quản lý nhân viên/ca, đăng ký lại khuôn mặt, theo dõi và điều chỉnh chấm công, xuất CSV.
+- **Quản trị viên:** đăng nhập, quản lý nhân viên/ca, đăng ký lại khuôn mặt, theo dõi và điều chỉnh chấm công, xuất excel.
 - **Kiosk:** không cần đăng nhập; chỉ hiển thị camera, thử thách liveness và kết quả nhận diện.
 
 ## Chức năng bắt buộc
@@ -16,7 +16,7 @@ Tạo demo điểm danh khuôn mặt chạy hoàn toàn trên một máy Windows
 - Đăng ký 10 embedding mẫu, tạo centroid và chỉ kích hoạt hồ sơ khi đăng ký hoàn tất.
 - Chấm công vào/ra qua webcam; nhận diện chỉ được chấp nhận sau liveness và nhận diện ổn định.
 - Xem, lọc, chỉnh sửa thủ công dữ liệu chấm công. Mỗi sửa đổi bắt buộc có lý do và có audit log.
-- Xuất CSV theo bộ lọc hiện tại.
+- Xuất excel theo bộ lọc hiện tại.
 
 ## Không thuộc phạm vi demo
 
@@ -27,4 +27,4 @@ Tạo demo điểm danh khuôn mặt chạy hoàn toàn trên một máy Windows
 
 ## Tiêu chí nghiệm thu
 
-Một máy Windows mới có thể chạy PostgreSQL qua Docker, khởi tạo dữ liệu, đăng nhập quản trị, đăng ký một nhân viên, hoàn thành liveness, ghi nhận check-in/check-out và xuất báo cáo CSV.
+Một máy Windows mới có thể chạy PostgreSQL qua Docker, khởi tạo dữ liệu, đăng nhập quản trị, đăng ký một nhân viên, hoàn thành liveness, ghi nhận check-in/check-out và xuất báo cáo excel.

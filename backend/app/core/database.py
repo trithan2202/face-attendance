@@ -23,3 +23,11 @@ class Base(DeclarativeBase):
 
 def get_db_session():
     return SessionLocal()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()

@@ -1,4 +1,5 @@
 from datetime import timedelta
+import logging
 
 from attendance.attendance_calculator import (
     AttendanceCalculator
@@ -10,6 +11,10 @@ from backend.app.models import Employee
 from backend.app.repositories.attendance_repository import (
     AttendanceRepository
 )
+from backend.app.core.logging import log_extra
+
+
+logger = logging.getLogger("face_attendance.attendance")
 
 
 class AttendanceService:
@@ -35,12 +40,24 @@ class AttendanceService:
         )
 
         if employee is None:
+            logger.warning(
+                "Attendance ignored because employee does not exist",
+                extra=log_extra("attendance_ignored", employee_id=employee_id, reason="employee_not_found"),
+            )
             return None
 
         if employee.status != "ACTIVE":
+            logger.warning(
+                "Attendance ignored because employee is inactive",
+                extra=log_extra("attendance_ignored", employee_id=employee_id, reason="employee_not_active"),
+            )
             return None
 
         if employee.shift is None:
+            logger.warning(
+                "Attendance ignored because employee has no shift",
+                extra=log_extra("attendance_ignored", employee_id=employee_id, reason="shift_missing"),
+            )
             return None
 
         shift = employee.shift
@@ -79,6 +96,15 @@ class AttendanceService:
             )
 
             if recognized_at < earliest_checkout:
+                logger.info(
+                    "Checkout blocked by minimum interval",
+                    extra=log_extra(
+                        "attendance_checkout_too_early",
+                        employee_id=employee.id,
+                        daily_id=daily.id,
+                        earliest_checkout=earliest_checkout.isoformat(),
+                    ),
+                )
                 return None
 
             return self._check_out(
@@ -135,6 +161,20 @@ class AttendanceService:
 
         db.commit()
 
+        logger.info(
+            "Employee checked in",
+            extra=log_extra(
+                "attendance_check_in_created",
+                employee_id=employee.id,
+                employee_code=employee.employee_code,
+                daily_id=daily.id,
+                work_date=work_date.isoformat(),
+                similarity=round(float(similarity), 4),
+                is_late=is_late,
+                late_minutes=late_minutes,
+            ),
+        )
+
         return {
             "event_type": "CHECK_IN",
             "employee_id": employee.id,
@@ -189,6 +229,21 @@ class AttendanceService:
         daily.status = "PRESENT"
 
         db.commit()
+
+        logger.info(
+            "Employee checked out",
+            extra=log_extra(
+                "attendance_check_out_created",
+                employee_id=employee.id,
+                employee_code=employee.employee_code,
+                daily_id=daily.id,
+                work_date=work_date.isoformat(),
+                similarity=round(float(similarity), 4),
+                worked_minutes=daily.worked_minutes,
+                early_leave_minutes=daily.early_leave_minutes,
+                overtime_minutes=daily.overtime_minutes,
+            ),
+        )
 
         return {
             "event_type": "CHECK_OUT",

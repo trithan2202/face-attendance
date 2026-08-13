@@ -61,12 +61,28 @@
 
 #         return employee, True
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 
-from backend.app.models import Employee
+from backend.app.models import Employee, FaceEmbedding
 
 
 class EmployeeRepository:
+    @staticmethod
+    def list(db, search=None, status=None):
+        stmt = select(Employee).order_by(Employee.employee_code)
+        if search:
+            pattern = f"%{search.strip()}%"
+            stmt = stmt.where(
+                or_(
+                    Employee.employee_code.ilike(pattern),
+                    Employee.full_name.ilike(pattern),
+                    Employee.department.ilike(pattern),
+                )
+            )
+        if status:
+            stmt = stmt.where(Employee.status == status)
+        return list(db.scalars(stmt))
+
     @staticmethod
     def get_by_id(db, employee_id):
         return db.get(Employee, employee_id)
@@ -97,10 +113,35 @@ class EmployeeRepository:
             phone=phone,
             department=department,
             shift_id=shift_id,
-            status="ACTIVE"
+            status="PENDING_ENROLLMENT"
         )
 
         db.add(employee)
         db.flush()
 
         return employee
+
+    @staticmethod
+    def update(db, employee, **values):
+        for field, value in values.items():
+            setattr(employee, field, value)
+        db.flush()
+        return employee
+
+    @staticmethod
+    def enrollment_stats(db, employee_id):
+        sample_count = db.scalar(
+            select(func.count(FaceEmbedding.id)).where(
+                FaceEmbedding.employee_id == employee_id,
+                FaceEmbedding.is_centroid.is_(False),
+            )
+        ) or 0
+        has_centroid = bool(
+            db.scalar(
+                select(func.count(FaceEmbedding.id)).where(
+                    FaceEmbedding.employee_id == employee_id,
+                    FaceEmbedding.is_centroid.is_(True),
+                )
+            )
+        )
+        return sample_count, has_centroid

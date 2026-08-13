@@ -2,7 +2,7 @@ import cv2
 
 from backend.app.core.config import settings
 from backend.app.core.database import get_db_session
-from backend.app.repositories import FaceRepository
+from backend.app.repositories.face_repository import FaceRepository
 from face_engine import FaceEngine, FaceMatcher
 
 

@@ -1,9 +1,13 @@
-from sqlalchemy import select
+from sqlalchemy import func, select
 
-from backend.app.models import Shift
+from backend.app.models import Employee, Shift
 
 
 class ShiftRepository:
+    @staticmethod
+    def list_all(db):
+        return list(db.scalars(select(Shift).order_by(Shift.code)))
+
     @staticmethod
     def get_by_code(db, code):
         return db.scalar(
@@ -41,3 +45,21 @@ class ShiftRepository:
         db.flush()
 
         return shift
+
+    @staticmethod
+    def update(db, shift, **values):
+        for field, value in values.items():
+            setattr(shift, field, value)
+        db.flush()
+        return shift
+
+    @staticmethod
+    def employee_count(db, shift_id):
+        return db.scalar(
+            select(func.count(Employee.id)).where(Employee.shift_id == shift_id)
+        ) or 0
+
+    @staticmethod
+    def delete(db, shift):
+        db.delete(shift)
+        db.flush()

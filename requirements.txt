@@ -6,3 +6,13 @@ numpy
 SQLAlchemy>=2.0
 psycopg[binary]
 python-dotenv
+fastapi
+uvicorn[standard]
+bcrypt
+PyJWT
+alembic
+email-validator
+python-multipart
+# MediaPipe 1.x exposes only the Tasks API. The liveness implementation uses
+# the legacy solutions.face_mesh API, which is available in the 0.10 line.
+mediapipe==0.10.21
