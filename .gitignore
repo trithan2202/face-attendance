@@ -3,5 +3,4 @@ __pycache__/
 .venv/
 .pytest_cache/
 runtime/
-PROJECT_STATUS.md
 dataset/

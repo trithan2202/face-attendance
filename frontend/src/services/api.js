@@ -168,11 +168,20 @@ export const api = {
       id: item.id, user: item.admin_username, timestamp: item.created_at,
       reason: item.reason, oldValue: item.before_data, newValue: item.after_data,
     })),
-    exportCsv: (filters = {}) => {
+    exportExcel: (filters = {}) => {
       const params = new URLSearchParams();
       if (filters.date) { params.set('date_from', filters.date); params.set('date_to', filters.date); }
       if (filters.status && filters.status !== 'All') params.set('status', statusValue(filters.status));
-      return request(`/admin/attendance/export.csv?${params}`);
+      return request(`/admin/attendance/export.xlsx?${params}`);
+    },
+    exportMonthlyExcel: ({ month, employeeId, department } = {}) => {
+      const params = new URLSearchParams();
+      const [yearValue, monthValue] = (month || '').split('-');
+      params.set('year', yearValue);
+      params.set('month', monthValue);
+      if (employeeId) params.set('employee_id', employeeId);
+      if (department) params.set('department', department);
+      return request(`/admin/attendance/export-monthly.xlsx?${params}`);
     },
   },
   kiosk: {
@@ -182,9 +191,7 @@ export const api = {
       return request(`/kiosk/liveness/${id}/frame`, { method: 'POST', body: form });
     },
     cancelLiveness: (id) => request(`/kiosk/liveness/${id}`, { method: 'DELETE' }),
-    startRecognition: (livenessId) => request('/kiosk/recognition', {
-      method: 'POST', body: JSON.stringify({ liveness_session_id: livenessId }),
-    }),
+    startRecognition: () => request('/kiosk/recognition', { method: 'POST' }),
     submitRecognitionFrame: (id, blob) => {
       const form = new FormData(); form.append('frame', blob, 'frame.jpg');
       return request(`/kiosk/recognition/${id}/frame`, { method: 'POST', body: form });

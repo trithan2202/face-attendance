@@ -1,16 +1,12 @@
 from pydantic import BaseModel
 
 
-class RecognitionStartRequest(BaseModel):
-    liveness_session_id: str
-
-
 class RecognitionSessionResponse(BaseModel):
     session_id: str
     state: str
     message: str
-    stable_hits: int
-    required_hits: int
+    stable_seconds: float
+    required_seconds: float
     employee_code: str | None = None
     full_name: str | None = None
     similarity: float | None = None

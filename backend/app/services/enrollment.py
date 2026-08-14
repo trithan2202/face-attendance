@@ -11,6 +11,7 @@ from backend.app.core.config import settings
 from backend.app.core.logging import log_extra
 from backend.app.repositories.employee_repository import EmployeeRepository
 from backend.app.repositories.face_repository import FaceRepository
+from backend.app.services.liveness import liveness_service
 from face_engine.quality import FaceQualityChecker
 from face_engine.recognizer import FaceRecognizer
 
@@ -30,9 +31,12 @@ class EnrollmentSession:
     session_id: str
     employee_id: int
     created_at: float
+    liveness_session_id: str
+    liveness_challenge: str
     last_capture_at: float = 0.0
-    state: str = "CAPTURING"
+    state: str = "LIVENESS"
     message: str = "Đưa khuôn mặt vào giữa khung hình"
+    liveness_progress: int = 0
     embeddings: list[np.ndarray] = field(default_factory=list)
     quality_scores: list[float] = field(default_factory=list)
     detection_scores: list[float] = field(default_factory=list)
@@ -44,7 +48,7 @@ class EnrollmentSessionStore:
         self._employee_sessions = {}
         self._lock = threading.RLock()
 
-    def create(self, employee_id: int) -> EnrollmentSession:
+    def create(self, employee_id: int, liveness) -> EnrollmentSession:
         with self._lock:
             previous_id = self._employee_sessions.get(employee_id)
             if previous_id:
@@ -53,6 +57,9 @@ class EnrollmentSessionStore:
                 session_id=secrets.token_urlsafe(24),
                 employee_id=employee_id,
                 created_at=time.monotonic(),
+                liveness_session_id=liveness.session_id,
+                liveness_challenge=liveness.challenge,
+                message=liveness.message,
             )
             self._sessions[session.session_id] = session
             self._employee_sessions[employee_id] = session.session_id
@@ -107,34 +114,71 @@ class EnrollmentSessionStore:
     @staticmethod
     def _expired(session):
         return (
-            session.state == "CAPTURING"
+            session.state in {"LIVENESS", "CAPTURING"}
             and time.monotonic() - session.created_at
             > settings.ENROLLMENT_SESSION_TIMEOUT_SECONDS
         )
 
 
 class EnrollmentService:
-    def __init__(self, store=None, engine_factory=None):
+    def __init__(self, store=None, engine_factory=None, liveness=None):
         self.store = store or EnrollmentSessionStore()
         self.engine_factory = engine_factory or create_face_engine
         self._engine = None
         self._engine_lock = threading.Lock()
         self.quality_checker = FaceQualityChecker()
+        self.liveness = liveness or liveness_service
 
     def start(self, employee_id: int):
-        return self.store.create(employee_id)
+        proof = self.liveness.start()
+        return self.store.create(employee_id, proof)
 
     def status(self, session_id: str):
-        return self.store.get(session_id)
+        with self.store.lock():
+            session = self.store.get(session_id)
+            if session is not None:
+                self._sync_liveness(session)
+            return session
 
     def cancel(self, session_id: str):
-        return self.store.cancel(session_id)
+        session = self.store.cancel(session_id)
+        if session is not None:
+            self.liveness.cancel(session.liveness_session_id)
+        return session
 
     def process_frame(self, db, session_id: str, frame):
         with self.store.lock():
             session = self.store.get(session_id)
             if session is None:
                 return None
+            if session.state == "LIVENESS":
+                result = self.liveness.process_frame(
+                    session.liveness_session_id, frame
+                )
+                if result is None:
+                    session.state = "FAILED"
+                    session.message = "Không tìm thấy phiên kiểm tra liveness"
+                    return session, False, None, None
+                proof, _face_count = result
+                session.liveness_progress = proof.progress
+                session.message = proof.message
+                if proof.state == "PASSED":
+                    session.state = "CAPTURING"
+                    session.message = (
+                        "Liveness thành công. Giữ khuôn mặt rõ nét để thu thập mẫu"
+                    )
+                    logger.info(
+                        "Enrollment liveness passed",
+                        extra=log_extra(
+                            "enrollment_liveness_passed",
+                            session_id=session.session_id,
+                            employee_id=session.employee_id,
+                            challenge=session.liveness_challenge,
+                        ),
+                    )
+                elif proof.state in {"FAILED", "CANCELLED"}:
+                    session.state = "FAILED"
+                return session, False, None, None
             if session.state != "CAPTURING":
                 return session, False, None, None
 
@@ -182,6 +226,19 @@ class EnrollmentService:
                 self._complete(db, session)
 
             return session, True, quality_score, float(face.det_score)
+
+    def _sync_liveness(self, session):
+        if session.state != "LIVENESS":
+            return
+        proof = self.liveness.get(session.liveness_session_id)
+        if proof is None:
+            session.state = "FAILED"
+            session.message = "Không tìm thấy phiên kiểm tra liveness"
+            return
+        session.liveness_progress = proof.progress
+        session.message = proof.message
+        if proof.state in {"FAILED", "CANCELLED"}:
+            session.state = "FAILED"
 
     def _detect(self, frame):
         with self._engine_lock:

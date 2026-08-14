@@ -24,7 +24,7 @@ Thêm các bảng:
 - `GET /api/health`, `GET /api/worker/status`.
 - `/api/admin/employees`: danh sách, tạo, sửa, ngưng hoạt động, enrollment status và đăng ký lại.
 - `/api/admin/shifts`: CRUD ca.
-- `/api/admin/attendance`: danh sách có lọc, chi tiết events, điều chỉnh, audit và export CSV.
+- `/api/admin/attendance`: danh sách có lọc, chi tiết events, điều chỉnh, audit, export Excel theo ngày và báo cáo công theo tháng.
 - `/api/kiosk`: lấy trạng thái camera, bắt đầu/hủy phiên liveness và nhận kết quả nhận diện.
 
 Tất cả `/api/admin/*` yêu cầu JWT quản trị; health và kiosk không yêu cầu đăng nhập. Response lỗi dùng định dạng nhất quán gồm mã, thông điệp tiếng Việt và chi tiết an toàn.

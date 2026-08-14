@@ -1,152 +1,137 @@
 # Face Attendance
 
-## Khởi động backend trên Windows
+Hệ thống chấm công bằng khuôn mặt chạy local, gồm kiosk nhận diện trên trình duyệt và trang quản trị nhân viên, ca làm việc, dữ liệu chấm công, audit trail và báo cáo Excel.
 
-```powershell
-Copy-Item .env.example .env
-py -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-docker compose up -d postgres
-.\scripts\migrate.ps1
-.\scripts\run_api.ps1
+## Mục lục
+
+- [Tính năng chính](#tính-năng-chính)
+- [Công nghệ sử dụng](#công-nghệ-sử-dụng)
+- [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
+- [Workflow nghiệp vụ](#workflow-nghiệp-vụ)
+- [Cấu trúc thư mục](#cấu-trúc-thư-mục)
+- [Chạy nhanh bằng Docker](#chạy-nhanh-bằng-docker)
+- [Chạy ở chế độ phát triển](#chạy-ở-chế-độ-phát-triển)
+- [Kiểm thử](#kiểm-thử)
+- [API và các địa chỉ truy cập](#api-và-các-địa-chỉ-truy-cập)
+- [Vận hành và xử lý lỗi](#vận-hành-và-xử-lý-lỗi)
+- [Bảo mật và giới hạn](#bảo-mật-và-giới-hạn)
+
+## Tính năng chính
+
+- Đăng nhập quản trị bằng JWT lưu trong cookie `HttpOnly`.
+- Quản lý nhân viên, phòng ban, ca làm việc và trạng thái hoạt động.
+- Đăng ký khuôn mặt bằng webcam với thử thách liveness.
+- Kiosk nhận diện không yêu cầu đăng nhập và không chạy liveness.
+- Chỉ ghi check-in/check-out khi cùng một khuôn mặt được nhận diện liên tục trong 3 giây.
+- Hỗ trợ ca qua ngày, đi muộn, về sớm, tăng ca và giới hạn check-out quá sớm.
+- Điều chỉnh chấm công có lý do bắt buộc và lưu audit trail trước/sau.
+- Xuất Excel theo ngày và báo cáo tháng gồm bảng công cùng sheet `Công OT`.
+
+## Công nghệ sử dụng
+
+| Thành phần | Công nghệ |
+| --- | --- |
+| Frontend | React 18, Vite, React Router, Tailwind CSS, Headless UI |
+| Backend API | FastAPI, Uvicorn, Pydantic |
+| Database | PostgreSQL 16, SQLAlchemy 2, Alembic |
+| Face recognition | InsightFace, ONNX Runtime, OpenCV |
+| Liveness | MediaPipe Face Mesh |
+| Báo cáo | OpenPyXL, Excel `.xlsx` |
+| Xác thực | bcrypt, JWT, cookie `HttpOnly` |
+| Triển khai local | Docker Compose, Nginx |
+| Kiểm thử | Python `unittest`, FastAPI TestClient |
+
+## Kiến trúc hệ thống
+
+### Các lớp chính
+
+1. **Presentation:** React cung cấp `/kiosk`, `/login` và các màn hình quản trị.
+2. **Reverse proxy:** Nginx phục vụ frontend production và chuyển `/api` đến FastAPI.
+3. **API:** FastAPI xác thực, kiểm tra request, quản lý session và trả response thống nhất.
+4. **Domain services:** xử lý enrollment, liveness, recognition, attendance, audit và export.
+5. **Face engine:** phát hiện khuôn mặt, kiểm tra chất lượng, tạo embedding và so khớp centroid.
+6. **Persistence:** repository SQLAlchemy truy cập PostgreSQL; Alembic quản lý schema.
+7. **Observability:** backend ghi log JSON có `request_id` và event nghiệp vụ.
+
+## Cấu trúc thư mục
+
+```text
+face-attendance/
+├── attendance/                 # Tính ngày công, check-in/out và các chỉ số
+├── backend/app/
+│   ├── api/                    # System, auth, kiosk và admin routes
+│   ├── core/                   # Config, database, JWT, logging
+│   ├── models/                 # SQLAlchemy models
+│   ├── repositories/           # Truy cập dữ liệu
+│   ├── schemas/                # Pydantic request/response
+│   └── services/               # Enrollment, liveness, recognition, report
+├── camera/                     # Desktop recognition worker tùy chọn
+├── face_engine/                # Detection, recognition, quality, matching
+├── frontend/                   # React/Vite SPA và Nginx config
+├── migrations/                 # Alembic migrations
+├── scripts/                    # Bootstrap, seed và script chạy Windows
+├── tests/                      # Unit/integration tests
+├── docs/                       # Đặc tả chi tiết theo chủ đề
+├── docker-compose.yml
+└── requirements.txt
 ```
 
-Mở một PowerShell khác để chạy worker:
+## Chạy nhanh bằng Docker
 
-```powershell
-.\scripts\run_recognition_worker.ps1
-```
+Đây là cách chạy được khuyến nghị để demo toàn bộ hệ thống.
 
-Chạy frontend ở PowerShell khác:
+### Yêu cầu
 
-```powershell
-Set-Location frontend
-npm install
-Set-Location ..
-.\scripts\run_frontend.ps1
-```
+- Windows 10/11 với Docker Desktop đang chạy.
+- Docker Compose v2.
+- Webcam và trình duyệt cho phép truy cập camera.
+- Các cổng `3000`, `8000` và `5432` chưa bị ứng dụng khác chiếm dụng.
 
-Vite proxy `/api` tới `http://127.0.0.1:8000`. Bản Docker/Nginx proxy `/api`
-tới API chạy trên Windows host tại cổng 8000.
-
-API documentation: `http://127.0.0.1:8000/api/docs`.
-
-Trước khi migrate, phải thay `JWT_SECRET`, `ADMIN_USERNAME` và
-`ADMIN_PASSWORD` trong `.env`. `JWT_SECRET` nên là chuỗi ngẫu nhiên dài tối
-thiểu 32 byte.
-
-## Chạy toàn bộ bằng Docker
-
-Sửa `.env` trước, đặc biệt `JWT_SECRET` và `ADMIN_PASSWORD` không được giữ giá
-trị mặc định. Sau đó:
+### Bước 1: build và khởi động
 
 ```powershell
 docker compose up -d --build
 docker compose ps
-docker compose logs -f backend
 ```
 
-Khi thay đổi `requirements.txt` hoặc gặp lỗi module xử lý khuôn mặt, bắt buộc
-rebuild image bằng `docker compose build --no-cache backend`; thao tác restart
-container đơn thuần không cài lại dependency Python.
+### Bước 2: truy cập ứng dụng
 
-Các địa chỉ:
+| Chức năng | Địa chỉ |
+| --- | --- |
+| Kiosk | `http://localhost:3000/kiosk` |
+| Đăng nhập admin | `http://localhost:3000/login` |
+| Dashboard | `http://localhost:3000/admin/dashboard` |
+| API docs | `http://localhost:8000/api/docs` |
+| API health | `http://localhost:8000/api/health` |
+| PostgreSQL | `localhost:5432` |
 
-- Frontend: `http://localhost:3000`
-- Backend/API docs: `http://localhost:8000/api/docs`
-- PostgreSQL: `localhost:5432`
+Đăng nhập bằng `ADMIN_USERNAME` và `ADMIN_PASSWORD` trong `.env`. Khi mở kiosk hoặc enrollment, chọn **Allow** khi trình duyệt yêu cầu quyền camera.
 
-Backend tự chạy Alembic và seed khi container khởi động. Nếu volume chứa schema
-5 bảng từ phiên bản cũ, bootstrap sẽ stamp revision `0001` rồi chỉ thêm các
-migration mới; không tạo lại hoặc xóa năm bảng cũ.
-
-### Database đã được tạo bằng script cũ
-
-Nếu database hiện có đã chứa năm bảng `employees`, `shifts`,
-`face_embeddings`, `attendance_events`, `attendance_daily` nhưng chưa có bảng
-`alembic_version`, chạy quy trình tiếp quản một lần:
+### Dừng hệ thống
 
 ```powershell
-.\scripts\adopt_existing_db.ps1
+docker compose down
 ```
 
-Không chạy script này cho database mới hoặc database đã được Alembic quản lý.
+## API và các địa chỉ truy cập
 
-## Endpoint hệ thống và xác thực
+Các nhóm API chính:
 
-- `GET /api/health`
-- `GET /api/worker/status`
-- `POST /api/auth/login`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
-- `GET|POST /api/admin/shifts`
-- `GET|PUT|DELETE /api/admin/shifts/{shift_id}`
-- `GET|POST /api/admin/employees`
-- `GET|PUT|DELETE /api/admin/employees/{employee_id}`
-- `POST /api/admin/employees/{employee_id}/enrollment`
-- `GET|DELETE /api/admin/enrollment/{session_id}`
-- `POST /api/admin/enrollment/{session_id}/frame`
-- `GET /api/admin/attendance`
-- `GET|PATCH /api/admin/attendance/{daily_id}`
-- `GET /api/admin/attendance/{daily_id}/adjustments`
-- `POST /api/kiosk/liveness`
-- `GET|DELETE /api/kiosk/liveness/{session_id}`
-- `POST /api/kiosk/liveness/{session_id}/frame`
-- `POST /api/kiosk/recognition`
-- `GET /api/kiosk/recognition/{session_id}`
-- `POST /api/kiosk/recognition/{session_id}/frame`
+- `/api/health`, `/api/worker/status`
+- `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`
+- `/api/admin/shifts`
+- `/api/admin/employees`
+- `/api/admin/enrollment`
+- `/api/admin/attendance`
+- `/api/kiosk/recognition`
+- `/api/kiosk/liveness` — route tương thích và kiểm thử liveness độc lập
 
-JWT đăng nhập được lưu trong cookie `HttpOnly`, `SameSite=Lax` và không được
-trả về trong JSON.
+Swagger/OpenAPI đầy đủ tại `http://localhost:8000/api/docs`.
 
-Các endpoint `/api/admin/*` yêu cầu cookie đăng nhập. `DELETE` nhân viên chỉ
-chuyển trạng thái sang `INACTIVE`; dữ liệu lịch sử không bị xóa. Nhân viên mới
-có trạng thái `PENDING_ENROLLMENT` và chỉ được chuyển sang `ACTIVE` sau khi có
-đúng 10 embedding mẫu cùng một centroid.
+## Bảo mật và giới hạn
 
-Frame enrollment được gửi dạng `multipart/form-data` với field `frame`. Backend
-chỉ xử lý frame trong bộ nhớ; ảnh không được lưu ra filesystem hoặc database.
-
-Liveness kiosk không yêu cầu đăng nhập. Backend chọn ngẫu nhiên thử thách chớp
-mắt, quay trái hoặc quay phải và sử dụng MediaPipe Face Mesh để theo dõi
-landmark. Đây là lớp bảo vệ cho demo local, không phải hệ thống chống giả mạo
-sinh trắc học cấp cao.
-
-Kết quả liveness chỉ được dùng một lần và phải đổi sang phiên recognition trong
-thời gian ngắn. Recognition yêu cầu cùng mã nhân viên xuất hiện tối thiểu 3 lần
-trong cửa sổ 5 frame trước khi ghi `CHECK_IN` hoặc `CHECK_OUT`.
-
-Danh sách chấm công hỗ trợ lọc theo khoảng ngày, nhân viên, phòng ban và trạng
-thái. Điều chỉnh bắt buộc có lý do; backend lưu snapshot trước/sau cùng tài
-khoản admin và tự tính lại các chỉ số liên quan.
-
-## Theo dõi log nghiệp vụ
-
-Backend ghi log JSON ra stdout để Docker thu thập. Theo dõi trực tiếp:
-
-```powershell
-docker compose logs -f --tail=200 backend
-```
-
-Lọc một nhóm sự kiện trong PowerShell:
-
-```powershell
-docker compose logs backend --since=10m |
-    Select-String 'liveness_|enrollment_|recognition_|attendance_'
-```
-
-Mỗi dòng có `timestamp`, `level`, `request_id`, `event`, `message` và các ID
-nghiệp vụ liên quan. Header `X-Request-ID` trong response cho phép tìm toàn bộ
-log của cùng request. Các sự kiện chính gồm:
-
-- `admin_login_succeeded`, `admin_login_failed`;
-- `liveness_started`, `liveness_state_changed`, `liveness_passed`;
-- `enrollment_started`, `enrollment_sample_accepted`, `enrollment_completed`;
-- `recognition_started`, `recognition_match_observed`, `recognition_completed`;
-- `attendance_check_in_created`, `attendance_check_out_created`,
-  `attendance_adjusted`;
-- `worker_ready`, `worker_failed`, `unhandled_exception`.
-
-`LOG_LEVEL=INFO` là mặc định. Request gửi frame có tần suất cao không xuất hiện
-ở mức này; đặt `LOG_HTTP_FRAME_REQUESTS=true` khi cần đo từng request frame.
-Không log ảnh, embedding, mật khẩu, JWT hoặc cookie.
+- Đây là hệ thống demo/local, chưa được thiết kế để mở trực tiếp ra Internet.
+- Liveness hiện tại là kiểm tra hành động bằng MediaPipe, không phải anti-spoofing sinh trắc học cấp cao.
+- Embedding khuôn mặt vẫn là dữ liệu sinh trắc học nhạy cảm và phải được bảo vệ như dữ liệu cá nhân.
+- Session enrollment/recognition được giữ trong RAM và mất khi backend restart.
+- Chưa có rate limit cho kiosk public, phân quyền nhiều vai trò, HA hoặc session store dùng chung.

@@ -21,6 +21,26 @@ const employeeSchema = z.object({
   status: z.string().min(1, 'Status is required'),
 });
 
+const generateEmployeeCode = (employees) => {
+  const existingCodes = new Set(employees.map(employee => employee.code.toUpperCase()));
+  const randomValue = new Uint32Array(1);
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const value = globalThis.crypto?.getRandomValues
+      ? globalThis.crypto.getRandomValues(randomValue)[0] % 1_000_000
+      : Math.floor(Math.random() * 1_000_000);
+    const code = `A${String(value).padStart(6, '0')}`;
+    if (!existingCodes.has(code)) return code;
+  }
+
+  for (let value = 0; value < 1_000_000; value += 1) {
+    const code = `A${String(value).padStart(6, '0')}`;
+    if (!existingCodes.has(code)) return code;
+  }
+
+  throw new Error('Không còn mã nhân viên khả dụng');
+};
+
 const Employees = () => {
   const [employees, setEmployees] = useState([]);
   const [shifts, setShifts] = useState([]);
@@ -78,7 +98,14 @@ const Employees = () => {
       Object.keys(emp).forEach(key => setValue(key, emp[key]));
     } else {
       setEditingId(null);
-      reset({ status: 'Pending enrollment' });
+      reset({
+        code: generateEmployeeCode(employees),
+        name: '',
+        email: '',
+        department: '',
+        shiftId: '',
+        status: 'Pending enrollment',
+      });
     }
     setIsModalOpen(true);
   };
@@ -111,7 +138,7 @@ const Employees = () => {
   };
 
   const stopEnrollment = async (cancel = true) => {
-    if (cancel && enrollment?.session_id && enrollment.state === 'CAPTURING') {
+    if (cancel && enrollment?.session_id && ['LIVENESS', 'CAPTURING'].includes(enrollment.state)) {
       try { await mockApi.employees.cancelEnrollment(enrollment.session_id); } catch { /* already closed */ }
     }
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -136,7 +163,7 @@ const Employees = () => {
   useEffect(() => () => streamRef.current?.getTracks().forEach(track => track.stop()), []);
 
   useEffect(() => {
-    if (!enrollment?.session_id || enrollment.state !== 'CAPTURING') return undefined;
+    if (!enrollment?.session_id || !['LIVENESS', 'CAPTURING'].includes(enrollment.state)) return undefined;
     let stopped = false;
     const capture = async () => {
       if (stopped || enrollmentBusy || !videoRef.current?.videoWidth) return;
@@ -153,6 +180,9 @@ const Employees = () => {
           streamRef.current?.getTracks().forEach(track => track.stop());
           addToast('Đăng ký khuôn mặt thành công', 'success');
           loadData();
+        } else if (['FAILED', 'CANCELLED', 'EXPIRED'].includes(result.state)) {
+          streamRef.current?.getTracks().forEach(track => track.stop());
+          addToast(result.message || 'Đăng ký khuôn mặt thất bại', 'error');
         }
       } catch (err) {
         addToast(err.message || 'Không thể gửi frame enrollment', 'error');
@@ -174,7 +204,7 @@ const Employees = () => {
         <button onClick={() => handleOpenModal(row)} className="p-1.5 text-neutral-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Edit">
           <Edit2 className="w-4 h-4" />
         </button>
-        <button onClick={() => { setDeleteId(row.id); setIsDeleteModalOpen(true); }} className="p-1.5 text-neutral-500 hover:text-danger-600 hover:bg-danger-50 rounded" title="Delete">
+        <button onClick={() => { setDeleteId(row.id); setIsDeleteModalOpen(true); }} className="p-1.5 text-danger-500 rounded" title="Delete">
           <Trash2 className="w-4 h-4" />
         </button>
         <button onClick={() => handleResetFace(row)} className="p-1.5 text-neutral-500 hover:text-warning-600 hover:bg-warning-50 rounded" title="Register Face">
@@ -261,13 +291,31 @@ const Employees = () => {
 
       <Modal isOpen={!!enrollmentEmployee} onClose={() => stopEnrollment(true)} title="Face enrollment">
         <div className="space-y-4 mt-4">
-          <p className="text-sm text-neutral-600">{enrollmentEmployee?.name}: giữ một khuôn mặt rõ nét và thay đổi nhẹ góc nhìn.</p>
-          <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video bg-neutral-900 rounded-lg object-cover" />
+          <p className="text-sm text-neutral-600">
+            {enrollmentEmployee?.name}:{' '}
+            {enrollment?.state === 'LIVENESS'
+              ? enrollment?.liveness_instruction
+              : 'giữ một khuôn mặt rõ nét và thay đổi nhẹ góc nhìn.'}
+          </p>
+          <video ref={videoRef} autoPlay playsInline muted className="w-full aspect-video bg-neutral-900 rounded-lg object-cover -scale-x-100" />
           <div className="flex justify-between text-sm">
             <span>{enrollment?.message}</span>
-            <strong>{enrollment?.samples_collected || 0}/{enrollment?.target_samples || 10}</strong>
+            <strong>
+              {enrollment?.state === 'LIVENESS'
+                ? 'Kiểm tra người thật'
+                : `${enrollment?.samples_collected || 0}/${enrollment?.target_samples || 10}`}
+            </strong>
           </div>
-          <div className="h-2 bg-neutral-200 rounded overflow-hidden"><div className="h-full bg-primary-600" style={{ width: `${((enrollment?.samples_collected || 0) / 10) * 100}%` }} /></div>
+          <div className="h-2 bg-neutral-200 rounded overflow-hidden">
+            <div
+              className="h-full bg-primary-600 transition-all"
+              style={{
+                width: enrollment?.state === 'LIVENESS'
+                  ? `${Math.min(100, ((enrollment?.liveness_progress || 0) / (enrollment?.liveness_required_progress || 3)) * 100)}%`
+                  : `${((enrollment?.samples_collected || 0) / 10) * 100}%`,
+              }}
+            />
+          </div>
           <div className="flex justify-end"><Button variant="ghost" onClick={() => stopEnrollment(enrollment?.state !== 'COMPLETED')}>Close</Button></div>
         </div>
       </Modal>

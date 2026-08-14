@@ -1,7 +1,9 @@
 import unittest
 from datetime import date, datetime, time
+from io import BytesIO
 
 from fastapi.testclient import TestClient
+from openpyxl import load_workbook
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -67,7 +69,27 @@ class AttendanceApiTests(unittest.TestCase):
                 last_check_out=None,
                 status="MISSING_CHECK_OUT",
             )
-            db.add(daily)
+            second_daily = AttendanceDaily(
+                employee_id=employee.id,
+                shift_id=shift.id,
+                work_date=date(2026, 8, 14),
+                first_check_in=datetime(2026, 8, 14, 8, 0),
+                last_check_out=datetime(2026, 8, 14, 19, 0),
+                worked_minutes=660,
+                overtime_minutes=120,
+                status="PRESENT",
+            )
+            regular_daily = AttendanceDaily(
+                employee_id=employee.id,
+                shift_id=shift.id,
+                work_date=date(2026, 8, 15),
+                first_check_in=datetime(2026, 8, 15, 8, 0),
+                last_check_out=datetime(2026, 8, 15, 17, 0),
+                worked_minutes=540,
+                overtime_minutes=0,
+                status="PRESENT",
+            )
+            db.add_all([daily, second_daily, regular_daily])
             db.flush()
             db.add(
                 AttendanceEvent(
@@ -111,11 +133,17 @@ class AttendanceApiTests(unittest.TestCase):
         self.assertEqual(len(listed.json()), 1)
 
         exported = self.client.get(
-            "/api/admin/attendance/export.csv?date_from=2026-08-13&date_to=2026-08-13"
+            "/api/admin/attendance/export.xlsx?date_from=2026-08-13&date_to=2026-08-13"
         )
         self.assertEqual(exported.status_code, 200)
-        self.assertIn("text/csv", exported.headers["content-type"])
-        self.assertIn("NV-ATT", exported.content.decode("utf-8-sig"))
+        self.assertIn(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            exported.headers["content-type"],
+        )
+        daily_workbook = load_workbook(BytesIO(exported.content))
+        daily_sheet = daily_workbook["Cham cong"]
+        self.assertEqual(daily_sheet["A5"].value, "NV-ATT")
+        self.assertEqual(daily_sheet["L5"].value, "Thiếu check-out")
 
         detail = self.client.get(f"/api/admin/attendance/{self.daily_id}")
         self.assertEqual(detail.status_code, 200)
@@ -151,6 +179,44 @@ class AttendanceApiTests(unittest.TestCase):
             audit.json()[0]["after_data"]["last_check_out"],
             "2026-08-13T18:00:00",
         )
+
+        monthly = self.client.get(
+            "/api/admin/attendance/export-monthly.xlsx?year=2026&month=8"
+        )
+        self.assertEqual(monthly.status_code, 200)
+        monthly_workbook = load_workbook(BytesIO(monthly.content), data_only=False)
+        self.assertEqual(
+            monthly_workbook.sheetnames,
+            ["Thang 08-2026", "Công OT"],
+        )
+        monthly_sheet = monthly_workbook["Thang 08-2026"]
+        self.assertIn("F1:AJ1", {str(item) for item in monthly_sheet.merged_cells.ranges})
+        self.assertEqual(monthly_sheet["B3"].value, "NV-ATT")
+        self.assertEqual(monthly_sheet["R3"].value, "HC")
+        self.assertEqual(monthly_sheet["R3"].fill.fgColor.rgb, "0057D16C")
+        self.assertEqual(monthly_sheet["U2"].fill.fgColor.rgb, "00FF4D4D")
+        self.assertEqual(
+            monthly_sheet["AK3"].value,
+            '=COUNTIF(F3:AJ3,"HC")+0.5*COUNTIF(F3:AJ3,"0.5HC")',
+        )
+        overtime_sheet = monthly_workbook["Công OT"]
+        self.assertIn("E1:F1", {str(item) for item in overtime_sheet.merged_cells.ranges})
+        self.assertEqual(overtime_sheet["A1"].value, "STT")
+        self.assertEqual(overtime_sheet["D1"].value, "PHÒNG BAN")
+        self.assertEqual(overtime_sheet["E1"].value, "Ngày (tiếng)")
+        self.assertEqual(overtime_sheet["E2"].value.date(), date(2026, 8, 13))
+        self.assertEqual(overtime_sheet["F2"].value.date(), date(2026, 8, 14))
+        self.assertEqual(overtime_sheet["B3"].value, "NV-ATT")
+        self.assertEqual(overtime_sheet["D3"].value, "QA")
+        self.assertEqual(overtime_sheet["E3"].value, 1)
+        self.assertEqual(overtime_sheet["F3"].value, 2)
+        self.assertEqual(overtime_sheet["G3"].value, "=SUM(E3:F3)")
+        self.assertEqual(overtime_sheet["H1"].value, "Note")
+        self.assertEqual(overtime_sheet.max_column, 8)
+        self.assertEqual(overtime_sheet["A1"].fill.fgColor.rgb, "005B9BD5")
+        self.assertEqual(overtime_sheet["E1"].fill.fgColor.rgb, "00FFC000")
+        self.assertEqual(overtime_sheet["E2"].fill.fgColor.rgb, "00FF0000")
+        self.assertEqual(overtime_sheet["G1"].fill.fgColor.rgb, "0082DC8C")
 
     def test_02_invalid_time_rolls_back_without_audit(self):
         invalid = self.client.patch(

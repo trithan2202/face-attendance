@@ -9,6 +9,7 @@ from backend.app.core.database import get_db
 from backend.app.repositories.employee_repository import EmployeeRepository
 from backend.app.schemas import EnrollmentFrameResponse, EnrollmentSessionResponse
 from backend.app.services.enrollment import TARGET_SAMPLES, enrollment_service
+from backend.app.services.liveness import INSTRUCTIONS, LivenessEngineUnavailable
 
 
 router = APIRouter(
@@ -28,6 +29,10 @@ def _session_response(session):
         else TARGET_SAMPLES if session.state == "COMPLETED" else 0,
         target_samples=TARGET_SAMPLES,
         message=session.message,
+        liveness_challenge=session.liveness_challenge,
+        liveness_instruction=INSTRUCTIONS[session.liveness_challenge],
+        liveness_progress=session.liveness_progress,
+        liveness_required_progress=settings.LIVENESS_REQUIRED_FRAMES,
     )
 
 
@@ -75,7 +80,13 @@ async def submit_enrollment_frame(
     if image is None:
         raise HTTPException(status_code=422, detail="Không thể giải mã frame")
 
-    result = enrollment_service.process_frame(db, session_id, image)
+    try:
+        result = enrollment_service.process_frame(db, session_id, image)
+    except LivenessEngineUnavailable as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Dịch vụ liveness chưa sẵn sàng; hãy rebuild backend",
+        ) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên đăng ký")
     session, accepted, quality_score, detection_score = result

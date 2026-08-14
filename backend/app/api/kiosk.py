@@ -7,7 +7,6 @@ from backend.app.schemas import (
     LivenessFrameResponse,
     LivenessSessionResponse,
     RecognitionSessionResponse,
-    RecognitionStartRequest,
 )
 from backend.app.core.database import get_db
 from backend.app.services.recognition import recognition_service
@@ -99,8 +98,8 @@ def _recognition_response(session):
         session_id=session.session_id,
         state=session.state,
         message=session.message,
-        stable_hits=session.stable_hits,
-        required_hits=3,
+        stable_seconds=round(session.stable_seconds, 2),
+        required_seconds=settings.RECOGNITION_HOLD_SECONDS,
         employee_code=session.employee_code,
         full_name=session.full_name,
         similarity=session.similarity,
@@ -115,18 +114,9 @@ def _recognition_response(session):
     status_code=status.HTTP_201_CREATED,
 )
 def start_recognition(
-    payload: RecognitionStartRequest,
     db: Session = Depends(get_db),
 ):
-    proof = liveness_service.consume_passed(payload.liveness_session_id)
-    if proof is None:
-        raise HTTPException(
-            status_code=409,
-            detail="Liveness chưa đạt, đã hết hạn hoặc đã được sử dụng",
-        )
-    return _recognition_response(
-        recognition_service.start(db, payload.liveness_session_id)
-    )
+    return _recognition_response(recognition_service.start(db))
 
 
 @router.get(

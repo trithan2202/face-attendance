@@ -25,6 +25,7 @@ const Attendance = () => {
   const [loading, setLoading] = useState(true);
   
   const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+  const [reportMonth, setReportMonth] = useState(new Date().toISOString().slice(0, 7));
   const [filterStatus, setFilterStatus] = useState('All');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -93,15 +94,36 @@ const Attendance = () => {
     }
   };
 
-  const handleExport = async () => {
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDailyExport = async () => {
     try {
-      const blob = await mockApi.attendance.exportCsv({ date: filterDate, status: filterStatus });
-      const link = document.createElement('a');
-      link.href = URL.createObjectURL(blob);
-      link.download = `attendance_export_${filterDate}.csv`;
-      link.click();
+      const blob = await mockApi.attendance.exportExcel({ date: filterDate, status: filterStatus });
+      downloadBlob(blob, `attendance_${filterDate}.xlsx`);
     } catch (err) {
-      addToast('Export failed', 'error');
+      addToast('Xuất Excel theo ngày thất bại', 'error');
+    }
+  };
+
+  const handleMonthlyExport = async () => {
+    if (!reportMonth) {
+      addToast('Hãy chọn tháng cần xuất báo cáo', 'error');
+      return;
+    }
+    try {
+      const blob = await mockApi.attendance.exportMonthlyExcel({ month: reportMonth });
+      downloadBlob(blob, `attendance_monthly_${reportMonth}.xlsx`);
+    } catch (err) {
+      addToast('Xuất báo cáo tháng thất bại', 'error');
     }
   };
 
@@ -133,9 +155,14 @@ const Attendance = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <h1 className="text-2xl font-bold text-neutral-900">Attendance</h1>
-        <Button onClick={handleExport} variant="secondary" className="gap-2">
-          <Download className="w-4 h-4" /> Export CSV
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleDailyExport} variant="secondary" className="gap-2">
+            <Download className="w-4 h-4" /> Xuất Excel ngày
+          </Button>
+          <Button onClick={handleMonthlyExport} variant="secondary" className="gap-2">
+            <Download className="w-4 h-4" /> Báo cáo tháng
+          </Button>
+        </div>
       </div>
 
       <div className="bg-white p-4 rounded-xl border border-neutral-200 shadow-sm flex flex-col sm:flex-row gap-4 items-end">
@@ -157,6 +184,13 @@ const Attendance = () => {
             { value: 'Missing check-out', label: 'Missing check-out' },
             { value: 'Absent', label: 'Absent' },
           ]}
+          className="max-w-[200px]"
+        />
+        <Input
+          label="Tháng báo cáo"
+          type="month"
+          value={reportMonth}
+          onChange={(e) => setReportMonth(e.target.value)}
           className="max-w-[200px]"
         />
         <Button variant="primary" onClick={loadData} className="mb-[2px]">Filter</Button>
@@ -210,7 +244,12 @@ const Attendance = () => {
       </Modal>
 
       {/* Audit Modal */}
-      <Modal isOpen={isAuditModalOpen} onClose={() => setIsAuditModalOpen(false)} title="Audit Trail">
+      <Modal
+        isOpen={isAuditModalOpen}
+        onClose={() => setIsAuditModalOpen(false)}
+        title="Audit Trail"
+        panelClassName="max-w-[548px]"
+      >
         <div className="mt-4 max-h-96 overflow-y-auto">
           {auditLoading ? (
             <div className="space-y-4">

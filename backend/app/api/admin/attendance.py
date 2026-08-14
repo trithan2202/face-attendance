@@ -1,5 +1,3 @@
-import csv
-import io
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +14,11 @@ from backend.app.schemas import (
     AttendanceDetailResponse,
 )
 from backend.app.services.attendance_adjustment import AttendanceAdjustmentService
+from backend.app.services.attendance_export import (
+    XLSX_MEDIA_TYPE,
+    build_daily_workbook,
+    build_monthly_report,
+)
 
 
 router = APIRouter(prefix="/admin/attendance", tags=["admin-attendance"])
@@ -62,8 +65,8 @@ def list_attendance(
     return [_daily_response(*row) for row in rows]
 
 
-@router.get("/export.csv")
-def export_attendance_csv(
+@router.get("/export.xlsx")
+def export_attendance_excel(
     date_from: date | None = None,
     date_to: date | None = None,
     employee_id: int | None = None,
@@ -77,27 +80,40 @@ def export_attendance_csv(
     rows = AttendanceRepository.list_daily(
         db, date_from, date_to, employee_id, department, attendance_status
     )
-    output = io.StringIO(newline="")
-    output.write("\ufeff")
-    writer = csv.writer(output)
-    writer.writerow([
-        "Mã nhân viên", "Họ tên", "Phòng ban", "Ca", "Ngày công",
-        "Check-in", "Check-out", "Phút làm", "Đi trễ", "Về sớm",
-        "Tăng ca", "Trạng thái",
-    ])
-    for daily, employee, shift in rows:
-        writer.writerow([
-            employee.employee_code, employee.full_name, employee.department or "",
-            shift.code, daily.work_date.isoformat(),
-            daily.first_check_in.isoformat(sep=" ") if daily.first_check_in else "",
-            daily.last_check_out.isoformat(sep=" ") if daily.last_check_out else "",
-            daily.worked_minutes, daily.late_minutes, daily.early_leave_minutes,
-            daily.overtime_minutes, daily.status,
-        ])
+    output = build_daily_workbook(rows, date_from=date_from, date_to=date_to)
     return StreamingResponse(
-        iter([output.getvalue().encode("utf-8")]),
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": "attachment; filename=attendance.csv"},
+        output,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": "attachment; filename=attendance-report.xlsx"
+        },
+    )
+
+
+@router.get("/export-monthly.xlsx")
+def export_monthly_attendance_excel(
+    year: int = Query(ge=2000, le=2100),
+    month: int = Query(ge=1, le=12),
+    employee_id: int | None = None,
+    department: str | None = Query(default=None, max_length=255),
+    admin=Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    output = build_monthly_report(
+        db,
+        year,
+        month,
+        employee_id=employee_id,
+        department=department,
+    )
+    return StreamingResponse(
+        output,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=attendance-monthly-{year}-{month:02d}.xlsx"
+            )
+        },
     )
 
 

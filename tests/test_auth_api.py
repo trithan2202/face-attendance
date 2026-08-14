@@ -1,6 +1,4 @@
 import unittest
-import time
-
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -95,20 +93,10 @@ class AuthApiTests(unittest.TestCase):
         self.assertEqual(cancelled.status_code, 200)
         self.assertEqual(cancelled.json()["state"], "CANCELLED")
 
-    def test_liveness_proof_is_single_use_for_recognition(self):
-        proof = liveness_service.start()
-        proof.state = "PASSED"
-        proof.passed_at = time.monotonic()
-        first = self.client.post(
-            "/api/kiosk/recognition",
-            json={"liveness_session_id": proof.session_id},
-        )
-        self.assertEqual(first.status_code, 201)
-        reused = self.client.post(
-            "/api/kiosk/recognition",
-            json={"liveness_session_id": proof.session_id},
-        )
-        self.assertEqual(reused.status_code, 409)
+    def test_recognition_can_start_without_liveness_proof(self):
+        response = self.client.post("/api/kiosk/recognition")
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["required_seconds"], 3)
 
     def test_admin_shift_and_employee_crud(self):
         unauthorized = self.client.get("/api/admin/shifts")
@@ -156,7 +144,11 @@ class AuthApiTests(unittest.TestCase):
             f"/api/admin/enrollment/{session_id}"
         )
         self.assertEqual(session_status.status_code, 200)
-        self.assertEqual(session_status.json()["state"], "CAPTURING")
+        self.assertEqual(session_status.json()["state"], "LIVENESS")
+        self.assertIn(
+            session_status.json()["liveness_challenge"],
+            {"BLINK", "TURN_LEFT", "TURN_RIGHT"},
+        )
         invalid_frame = self.client.post(
             f"/api/admin/enrollment/{session_id}/frame",
             files={"frame": ("frame.txt", b"invalid", "text/plain")},

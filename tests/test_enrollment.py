@@ -24,6 +24,39 @@ class FakeEngine:
         ]
 
 
+class FakeLivenessService:
+    def __init__(self):
+        self.session = None
+        self.should_pass = False
+
+    def start(self):
+        self.session = SimpleNamespace(
+            session_id="liveness-enrollment",
+            challenge="BLINK",
+            state="WAITING",
+            message="Hãy chớp mắt một lần",
+            progress=0,
+        )
+        return self.session
+
+    def get(self, session_id):
+        return self.session if self.session and session_id == self.session.session_id else None
+
+    def process_frame(self, session_id, frame):
+        session = self.get(session_id)
+        if self.should_pass:
+            session.state = "PASSED"
+            session.message = "Đã hoàn thành thử thách liveness"
+            session.progress = settings.LIVENESS_REQUIRED_FRAMES
+        return session, 1
+
+    def cancel(self, session_id):
+        session = self.get(session_id)
+        if session and session.state == "WAITING":
+            session.state = "CANCELLED"
+        return session
+
+
 class EnrollmentServiceTests(unittest.TestCase):
     def setUp(self):
         self.engine = create_engine("sqlite://")
@@ -58,14 +91,27 @@ class EnrollmentServiceTests(unittest.TestCase):
         self.engine.dispose()
 
     def test_ten_samples_are_committed_with_centroid_and_activate_employee(self):
+        liveness = FakeLivenessService()
         service = EnrollmentService(
-            store=EnrollmentSessionStore(), engine_factory=FakeEngine
+            store=EnrollmentSessionStore(),
+            engine_factory=FakeEngine,
+            liveness=liveness,
         )
         session = service.start(self.employee_id)
         rng = np.random.default_rng(42)
         frame = rng.integers(0, 256, (200, 200, 3), dtype=np.uint8)
 
         with self.Session() as db:
+            first = service.process_frame(db, session.session_id, frame)
+            self.assertEqual(session.state, "LIVENESS")
+            self.assertFalse(first[1])
+            self.assertEqual(len(session.embeddings), 0)
+
+            liveness.should_pass = True
+            passed = service.process_frame(db, session.session_id, frame)
+            self.assertEqual(session.state, "CAPTURING")
+            self.assertFalse(passed[1])
+
             for _ in range(10):
                 result = service.process_frame(db, session.session_id, frame)
                 self.assertTrue(result[1])
@@ -88,14 +134,18 @@ class EnrollmentServiceTests(unittest.TestCase):
             self.assertEqual(centroid_count, 1)
 
     def test_cancel_discards_in_memory_samples(self):
+        liveness = FakeLivenessService()
         service = EnrollmentService(
-            store=EnrollmentSessionStore(), engine_factory=FakeEngine
+            store=EnrollmentSessionStore(),
+            engine_factory=FakeEngine,
+            liveness=liveness,
         )
         session = service.start(self.employee_id)
         session.embeddings.append(np.ones(512, dtype=np.float32))
         cancelled = service.cancel(session.session_id)
         self.assertEqual(cancelled.state, "CANCELLED")
         self.assertEqual(cancelled.embeddings, [])
+        self.assertEqual(liveness.session.state, "CANCELLED")
 
 
 if __name__ == "__main__":

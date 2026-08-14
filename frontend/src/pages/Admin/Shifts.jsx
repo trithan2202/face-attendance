@@ -109,7 +109,7 @@ const Shifts = () => {
         <button onClick={() => handleOpenModal(row)} className="p-1.5 text-neutral-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Edit">
           <Edit2 className="w-4 h-4" />
         </button>
-        <button onClick={() => { setDeleteId(row.id); setIsDeleteModalOpen(true); }} className="p-1.5 text-neutral-500 hover:text-danger-600 hover:bg-danger-50 rounded" title="Delete">
+        <button onClick={() => { setDeleteId(row.id); setIsDeleteModalOpen(true); }} className="p-1.5 text-danger-500 rounded" title="Delete">
           <Trash2 className="w-4 h-4" />
         </button>
       </div>

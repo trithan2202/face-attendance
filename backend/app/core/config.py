@@ -52,6 +52,12 @@ class Settings:
         self.RECOGNITION_SESSION_TIMEOUT_SECONDS = int(
             os.getenv("RECOGNITION_SESSION_TIMEOUT_SECONDS", "30")
         )
+        self.RECOGNITION_HOLD_SECONDS = float(
+            os.getenv("RECOGNITION_HOLD_SECONDS", "3")
+        )
+        self.RECOGNITION_MAX_FRAME_GAP_SECONDS = float(
+            os.getenv("RECOGNITION_MAX_FRAME_GAP_SECONDS", "1")
+        )
         self.MIN_CHECKOUT_MINUTES = int(os.getenv("MIN_CHECKOUT_MINUTES", "60"))
         self.ENROLLMENT_SESSION_TIMEOUT_SECONDS = int(
             os.getenv("ENROLLMENT_SESSION_TIMEOUT_SECONDS", "180")

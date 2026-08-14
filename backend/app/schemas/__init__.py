@@ -9,7 +9,7 @@ from .attendance import (
 from .employee import EmployeeCreate, EmployeeResponse, EmployeeUpdate
 from .enrollment import EnrollmentFrameResponse, EnrollmentSessionResponse
 from .liveness import LivenessFrameResponse, LivenessSessionResponse
-from .recognition import RecognitionSessionResponse, RecognitionStartRequest
+from .recognition import RecognitionSessionResponse
 from .shift import ShiftCreate, ShiftResponse, ShiftUpdate
 
 __all__ = [
@@ -28,7 +28,6 @@ __all__ = [
     "LivenessFrameResponse",
     "LivenessSessionResponse",
     "RecognitionSessionResponse",
-    "RecognitionStartRequest",
     "ShiftCreate",
     "ShiftResponse",
     "ShiftUpdate",

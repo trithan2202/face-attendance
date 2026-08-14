@@ -3,7 +3,7 @@
 ## Kiểm thử tự động
 
 - Unit: normalize/centroid/matcher, quality checker, state liveness, work date, đi trễ/về sớm/tăng ca, cooldown và tính lại sau điều chỉnh.
-- Integration API: login, phân quyền admin, CRUD nhân viên/ca, enrollment metadata, check-in/check-out, audit và CSV export.
+- Integration API: login, phân quyền admin, CRUD nhân viên/ca, enrollment metadata, check-in/check-out, audit và export Excel theo ngày/tháng.
 - Frontend: route guard, validation form, trạng thái kiosk và bộ lọc attendance.
 
 ## Kiểm thử webcam thủ công
@@ -17,11 +17,11 @@
 
 1. Khởi động PostgreSQL, migration, API, frontend và worker; kiểm tra health/status xanh.
 2. Đăng nhập admin, tạo ca và nhân viên.
-3. Mở kiosk, đăng ký 10 mẫu embedding cho nhân viên.
-4. Thực hiện thử thách liveness và ghi nhận check-in.
+3. Mở quản trị, thực hiện thử thách liveness rồi đăng ký 10 mẫu embedding cho nhân viên.
+4. Mở kiosk, giữ khuôn mặt liên tục 3 giây và ghi nhận check-in.
 5. Sau khoảng thời gian cấu hình, lặp lại để check-out.
 6. Mở quản trị, lọc bản ghi, điều chỉnh một bản ghi với lý do và kiểm tra audit.
-7. Xuất CSV và xác nhận không có ảnh/video xuất hiện trong DB hoặc thư mục dữ liệu.
+7. Xuất Excel theo ngày, báo cáo công theo tháng và xác nhận không có ảnh/video xuất hiện trong DB hoặc thư mục dữ liệu.
 
 ## Definition of done
 

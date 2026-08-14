@@ -88,15 +88,10 @@ class LivenessService:
         self.analyzer = analyzer or FaceMeshAnalyzer()
         self.challenge_picker = challenge_picker or (lambda: random.choice(CHALLENGES))
         self._sessions = {}
-        self._active_session_id = None
         self._lock = threading.RLock()
 
     def start(self):
         with self._lock:
-            previous = self._sessions.get(self._active_session_id)
-            if previous and previous.state == "WAITING":
-                previous.state = "CANCELLED"
-                previous.message = "Phiên đã được thay thế bởi thử thách mới"
             challenge = self.challenge_picker()
             session = LivenessSession(
                 session_id=secrets.token_urlsafe(24),
@@ -105,7 +100,6 @@ class LivenessService:
                 message=INSTRUCTIONS[challenge],
             )
             self._sessions[session.session_id] = session
-            self._active_session_id = session.session_id
             logger.info(
                 "Liveness session started",
                 extra=log_extra(

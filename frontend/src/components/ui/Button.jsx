@@ -14,7 +14,7 @@ const Button = React.forwardRef(({
   const variants = {
     primary: 'bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800',
     secondary: 'bg-neutral-200 text-neutral-900 hover:bg-neutral-300 active:bg-neutral-400',
-    danger: 'bg-danger-600 text-white hover:bg-danger-700 active:bg-danger-800',
+    danger: 'bg-danger-500 text-white active:bg-danger-700',
     ghost: 'bg-transparent text-neutral-600 hover:bg-neutral-100 active:bg-neutral-200',
   };
 

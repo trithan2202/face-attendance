@@ -7,14 +7,14 @@ Tạo demo điểm danh khuôn mặt chạy hoàn toàn trên một máy Windows
 ## Vai trò
 
 - **Quản trị viên:** đăng nhập, quản lý nhân viên/ca, đăng ký lại khuôn mặt, theo dõi và điều chỉnh chấm công, xuất excel.
-- **Kiosk:** không cần đăng nhập; chỉ hiển thị camera, thử thách liveness và kết quả nhận diện.
+- **Kiosk:** không cần đăng nhập; hiển thị camera, tiến độ giữ khuôn mặt 3 giây và kết quả nhận diện.
 
 ## Chức năng bắt buộc
 
 - Đăng nhập bằng một tài khoản quản trị local.
 - CRUD nhân viên và ca làm, bao gồm ca qua ngày và các khoảng cho phép đi trễ/về sớm.
-- Đăng ký 10 embedding mẫu, tạo centroid và chỉ kích hoạt hồ sơ khi đăng ký hoàn tất.
-- Chấm công vào/ra qua webcam; nhận diện chỉ được chấp nhận sau liveness và nhận diện ổn định.
+- Vượt qua liveness trước khi đăng ký 10 embedding mẫu, tạo centroid và chỉ kích hoạt hồ sơ khi đăng ký hoàn tất.
+- Chấm công vào/ra qua webcam; nhận diện chỉ được chấp nhận khi cùng một khuôn mặt xuất hiện liên tục đủ 3 giây.
 - Xem, lọc, chỉnh sửa thủ công dữ liệu chấm công. Mỗi sửa đổi bắt buộc có lý do và có audit log.
 - Xuất excel theo bộ lọc hiện tại.
 

@@ -8,6 +8,10 @@ class EnrollmentSessionResponse(BaseModel):
     samples_collected: int
     target_samples: int
     message: str
+    liveness_challenge: str | None = None
+    liveness_instruction: str | None = None
+    liveness_progress: int = 0
+    liveness_required_progress: int = 0
 
 
 class EnrollmentFrameResponse(EnrollmentSessionResponse):

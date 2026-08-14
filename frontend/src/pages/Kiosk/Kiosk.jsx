@@ -20,6 +20,7 @@ const Kiosk = () => {
   const [status, setStatus] = useState('starting');
   const [message, setMessage] = useState('Đang mở camera...');
   const [result, setResult] = useState(null);
+  const [holdProgress, setHoldProgress] = useState({ current: 0, required: 3 });
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -39,12 +40,13 @@ const Kiosk = () => {
   const resetCycle = useCallback(async () => {
     try {
       setResult(null);
+      setHoldProgress({ current: 0, required: 3 });
       const health = await api.system.workerStatus().catch(() => null);
       if (health && !health.online) setMessage('Worker camera đang offline; kiosk vẫn dùng camera trình duyệt');
-      const liveness = await api.kiosk.startLiveness();
-      sessionRef.current = { phase: 'liveness', id: liveness.session_id };
-      setStatus('liveness');
-      setMessage(liveness.instruction);
+      const recognition = await api.kiosk.startRecognition();
+      sessionRef.current = { id: recognition.session_id };
+      setStatus('recognizing');
+      setMessage(recognition.message);
     } catch (err) {
       sessionRef.current = null;
       if (err?.status === 0) stopCamera();
@@ -77,40 +79,28 @@ const Kiosk = () => {
   }, [resetCycle, stopCamera]);
 
   useEffect(() => {
-    if (!['liveness', 'recognizing'].includes(status)) return undefined;
+    if (status !== 'recognizing') return undefined;
     let active = true;
     const submit = async () => {
       if (!active || busyRef.current || !sessionRef.current) return;
       busyRef.current = true;
       try {
         const blob = await captureJpeg(videoRef.current);
-        if (sessionRef.current.phase === 'liveness') {
-          const response = await api.kiosk.submitLivenessFrame(sessionRef.current.id, blob);
-          setMessage(response.message || response.instruction);
-          if (response.state === 'PASSED') {
-            const recognition = await api.kiosk.startRecognition(response.session_id);
-            sessionRef.current = { phase: 'recognition', id: recognition.session_id };
-            setStatus('recognizing');
-            setMessage(recognition.message);
-          } else if (['FAILED', 'CANCELLED'].includes(response.state)) {
-            throw new Error(response.message);
-          }
-        } else {
-          const response = await api.kiosk.submitRecognitionFrame(sessionRef.current.id, blob);
-          setMessage(response.message);
-          if (response.state === 'COMPLETED') {
-            sessionRef.current = null;
-            setStatus('success');
-            setResult(response);
-            scheduleReset();
-          } else if (response.state === 'COOLDOWN') {
-            sessionRef.current = null;
-            setStatus('error');
-            setResult({ error: response.message });
-            scheduleReset();
-          } else if (response.state === 'FAILED') {
-            throw new Error(response.message);
-          }
+        const response = await api.kiosk.submitRecognitionFrame(sessionRef.current.id, blob);
+        setMessage(response.message);
+        setHoldProgress({ current: response.stable_seconds, required: response.required_seconds });
+        if (response.state === 'COMPLETED') {
+          sessionRef.current = null;
+          setStatus('success');
+          setResult(response);
+          scheduleReset();
+        } else if (response.state === 'COOLDOWN') {
+          sessionRef.current = null;
+          setStatus('error');
+          setResult({ error: response.message });
+          scheduleReset();
+        } else if (response.state === 'FAILED') {
+          throw new Error(response.message);
         }
       } catch (err) {
         sessionRef.current = null;
@@ -146,8 +136,17 @@ const Kiosk = () => {
       </div>
       <div className="relative w-full max-w-5xl aspect-video rounded-2xl overflow-hidden border border-neutral-700 shadow-2xl bg-neutral-800">
         <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover -scale-x-100" />
-        {status === 'liveness' && <div className="absolute inset-x-0 bottom-8 text-center"><span className="inline-block px-6 py-3 text-2xl font-bold bg-black/60 rounded-xl">{message}</span></div>}
-        {status === 'recognizing' && <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-2 border-primary-500 rounded-3xl shadow-[0_0_40px_rgba(99,102,241,0.5)]" />}
+        {status === 'recognizing' && (
+          <>
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-2 border-primary-500 rounded-3xl shadow-[0_0_40px_rgba(99,102,241,0.5)]" />
+            <div className="absolute inset-x-8 bottom-8 h-3 bg-black/60 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-primary-500 transition-all duration-300"
+                style={{ width: `${Math.min(100, (holdProgress.current / holdProgress.required) * 100)}%` }}
+              />
+            </div>
+          </>
+        )}
       </div>
       {(status === 'success' || status === 'error') && (
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 w-full max-w-2xl px-4">

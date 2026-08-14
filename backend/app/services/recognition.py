@@ -3,7 +3,7 @@ import logging
 import secrets
 import threading
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -11,7 +11,6 @@ from attendance.attendance_service import AttendanceService
 from backend.app.core.config import settings
 from backend.app.core.logging import log_extra
 from backend.app.repositories.face_repository import FaceRepository
-from camera.stabilizer import RecognitionStabilizer
 from face_engine.matcher import FaceMatcher
 
 
@@ -27,38 +26,36 @@ logger = logging.getLogger("face_attendance.recognition")
 @dataclass
 class RecognitionSession:
     session_id: str
-    liveness_session_id: str
     created_at: float
     known_faces: dict
     metadata: dict
     state: str = "RECOGNIZING"
-    message: str = "Giữ khuôn mặt ổn định trước camera"
-    stable_hits: int = 0
+    message: str = "Giữ khuôn mặt trong khung hình trong 3 giây"
+    stable_since: float | None = None
+    last_matched_at: float | None = None
+    stable_seconds: float = 0.0
     employee_code: str | None = None
     full_name: str | None = None
     similarity: float | None = None
     event_type: str | None = None
-    stabilizer: RecognitionStabilizer = field(
-        default_factory=lambda: RecognitionStabilizer(window_size=5, required_hits=3)
-    )
 
 
 class RecognitionService:
-    def __init__(self, engine_factory=None):
+    def __init__(self, engine_factory=None, clock=None):
         self.engine_factory = engine_factory or create_face_engine
         self._engine = None
         self._sessions = {}
         self._lock = threading.RLock()
+        self.clock = clock or time.monotonic
         self.matcher = FaceMatcher(settings.FACE_SIMILARITY_THRESHOLD)
         self.attendance = AttendanceService(settings.MIN_CHECKOUT_MINUTES)
 
-    def start(self, db, liveness_session_id):
+    def start(self, db):
         with self._lock:
             data = FaceRepository.get_centroids(db)
             session = RecognitionSession(
                 session_id=secrets.token_urlsafe(24),
-                liveness_session_id=liveness_session_id,
-                created_at=time.monotonic(),
+                created_at=self.clock(),
                 known_faces={code: item["embedding"] for code, item in data.items()},
                 metadata=data,
             )
@@ -68,8 +65,8 @@ class RecognitionService:
                 extra=log_extra(
                     "recognition_started",
                     session_id=session.session_id,
-                    liveness_session_id=liveness_session_id,
                     known_employee_count=len(session.known_faces),
+                    required_hold_seconds=settings.RECOGNITION_HOLD_SECONDS,
                 ),
             )
             return session
@@ -99,8 +96,7 @@ class RecognitionService:
             faces = self._detect(frame)
             if len(faces) != 1:
                 previous_message = session.message
-                session.stabilizer.reset()
-                session.stable_hits = 0
+                self._reset_stability(session)
                 session.message = (
                     "Không tìm thấy khuôn mặt"
                     if not faces
@@ -120,13 +116,10 @@ class RecognitionService:
 
             face = faces[0]
             code, similarity = self.matcher.match(face.embedding, session.known_faces)
-            confirmed = session.stabilizer.update(code)
-            session.stable_hits = (
-                sum(value == code for value in session.stabilizer.history) if code else 0
-            )
             session.similarity = similarity if similarity >= 0 else None
             if code is None:
                 previous_message = session.message
+                self._reset_stability(session)
                 session.message = "Không nhận diện được nhân viên"
                 if session.message != previous_message:
                     logger.info(
@@ -139,9 +132,29 @@ class RecognitionService:
                         ),
                     )
                 return session
+            now = self.clock()
+            continuous = (
+                session.employee_code == code
+                and session.stable_since is not None
+                and session.last_matched_at is not None
+                and now - session.last_matched_at
+                <= settings.RECOGNITION_MAX_FRAME_GAP_SECONDS
+            )
+            if not continuous:
+                session.stable_since = now
+                session.stable_seconds = 0.0
+            else:
+                session.stable_seconds = max(0.0, now - session.stable_since)
+            session.last_matched_at = now
             session.employee_code = code
             session.full_name = session.metadata[code]["full_name"]
-            session.message = f"Đang xác nhận {session.stable_hits}/3"
+            remaining = max(
+                0.0, settings.RECOGNITION_HOLD_SECONDS - session.stable_seconds
+            )
+            session.message = (
+                "Đang xác nhận khuôn mặt "
+                f"{session.stable_seconds:.1f}/{settings.RECOGNITION_HOLD_SECONDS:g} giây"
+            )
             logger.info(
                 "Recognition match observed",
                 extra=log_extra(
@@ -149,16 +162,17 @@ class RecognitionService:
                     session_id=session.session_id,
                     employee_code=code,
                     similarity=round(similarity, 4),
-                    stable_hits=session.stable_hits,
-                    required_hits=3,
+                    stable_seconds=round(session.stable_seconds, 2),
+                    required_seconds=settings.RECOGNITION_HOLD_SECONDS,
+                    remaining_seconds=round(remaining, 2),
                 ),
             )
-            if confirmed:
+            if session.stable_seconds >= settings.RECOGNITION_HOLD_SECONDS:
                 self._record_attendance(db, session, face)
             return session
 
     def expires_in(self, session):
-        elapsed = time.monotonic() - session.created_at
+        elapsed = self.clock() - session.created_at
         return max(
             0,
             math.ceil(settings.RECOGNITION_SESSION_TIMEOUT_SECONDS - elapsed),
@@ -168,6 +182,15 @@ class RecognitionService:
         if self._engine is None:
             self._engine = self.engine_factory()
         return self._engine.detect(frame)
+
+    @staticmethod
+    def _reset_stability(session):
+        session.stable_since = None
+        session.last_matched_at = None
+        session.stable_seconds = 0.0
+        session.employee_code = None
+        session.full_name = None
+        session.similarity = None
 
     def _record_attendance(self, db, session, face):
         employee = session.metadata[session.employee_code]
@@ -209,11 +232,10 @@ class RecognitionService:
             ),
         )
 
-    @staticmethod
-    def _expired(session):
+    def _expired(self, session):
         return (
             session.state == "RECOGNIZING"
-            and time.monotonic() - session.created_at
+            and self.clock() - session.created_at
             > settings.RECOGNITION_SESSION_TIMEOUT_SECONDS
         )
 

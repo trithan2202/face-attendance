@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 
 from backend.app.models import (
     AdminUser,
@@ -14,6 +14,36 @@ from attendance.work_date_resolver import WorkDateResolver
 
 
 class AttendanceRepository:
+    @staticmethod
+    def list_employees_for_report(
+        db,
+        employee_id=None,
+        department=None,
+        date_from=None,
+        date_to=None,
+    ):
+        stmt = (
+            select(Employee, Shift)
+            .outerjoin(Shift, Shift.id == Employee.shift_id)
+            .order_by(Employee.employee_code)
+        )
+        if date_from and date_to:
+            has_attendance = exists().where(
+                AttendanceDaily.employee_id == Employee.id,
+                AttendanceDaily.work_date >= date_from,
+                AttendanceDaily.work_date <= date_to,
+            )
+            stmt = stmt.where(
+                or_(Employee.status != "INACTIVE", has_attendance)
+            )
+        else:
+            stmt = stmt.where(Employee.status != "INACTIVE")
+        if employee_id:
+            stmt = stmt.where(Employee.id == employee_id)
+        if department:
+            stmt = stmt.where(Employee.department == department)
+        return list(db.execute(stmt).all())
+
     @staticmethod
     def list_daily(
         db,
