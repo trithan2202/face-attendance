@@ -4,3 +4,5 @@ __pycache__/
 .pytest_cache/
 runtime/
 dataset/
+PROJECT_STATUS.md
+docs/
