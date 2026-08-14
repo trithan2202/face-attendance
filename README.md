@@ -7,13 +7,9 @@ Hệ thống chấm công bằng khuôn mặt chạy local, gồm kiosk nhận d
 - [Tính năng chính](#tính-năng-chính)
 - [Công nghệ sử dụng](#công-nghệ-sử-dụng)
 - [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
-- [Workflow nghiệp vụ](#workflow-nghiệp-vụ)
 - [Cấu trúc thư mục](#cấu-trúc-thư-mục)
 - [Chạy nhanh bằng Docker](#chạy-nhanh-bằng-docker)
-- [Chạy ở chế độ phát triển](#chạy-ở-chế-độ-phát-triển)
-- [Kiểm thử](#kiểm-thử)
 - [API và các địa chỉ truy cập](#api-và-các-địa-chỉ-truy-cập)
-- [Vận hành và xử lý lỗi](#vận-hành-và-xử-lý-lỗi)
 - [Bảo mật và giới hạn](#bảo-mật-và-giới-hạn)
 
 ## Tính năng chính
