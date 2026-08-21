@@ -9,8 +9,8 @@ import Button from '../../components/ui/Button';
 import { User, Lock, AlertCircle, Eye, EyeOff } from 'lucide-react';
 
 const loginSchema = z.object({
-  username: z.string().min(1, 'Username is required'),
-  password: z.string().min(1, 'Password is required'),
+  username: z.string().min(1, 'Vui lòng nhập tên đăng nhập'),
+  password: z.string().min(1, 'Vui lòng nhập mật khẩu'),
 });
 
 const Login = () => {
@@ -29,7 +29,7 @@ const Login = () => {
       await login(data.username, data.password);
       navigate('/admin/dashboard');
     } catch (err) {
-      setError(err.message || 'Login failed');
+      setError(err.message || 'Đăng nhập thất bại');
     }
   };
 
@@ -40,8 +40,8 @@ const Login = () => {
           <div className="w-16 h-16 bg-primary-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
              <span className="text-3xl font-bold text-primary-600">FA</span>
           </div>
-          <h1 className="text-2xl font-bold text-neutral-900">Attendance System</h1>
-          <p className="text-neutral-500 mt-2 text-sm">Sign in to admin dashboard</p>
+          <h1 className="text-2xl font-bold text-neutral-900">Hệ thống chấm công</h1>
+          <p className="text-neutral-500 mt-2 text-sm">Đăng nhập vào trang quản trị</p>
         </div>
 
         {error && (
@@ -53,18 +53,18 @@ const Login = () => {
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
           <Input
-            label="Username"
-            placeholder="Enter your username"
+            label="Tên đăng nhập"
+            placeholder="Nhập tên đăng nhập"
             icon={User}
             error={errors.username?.message}
             {...register('username')}
           />
-          
+
           <div className="relative">
             <Input
               type={showPassword ? 'text' : 'password'}
-              label="Password"
-              placeholder="Enter your password"
+              label="Mật khẩu"
+              placeholder="Nhập mật khẩu"
               icon={Lock}
               error={errors.password?.message}
               {...register('password')}
@@ -79,7 +79,7 @@ const Login = () => {
           </div>
 
           <Button type="submit" className="w-full" size="lg" isLoading={isSubmitting}>
-            Sign In
+            Đăng nhập
           </Button>
         </form>
       </div>

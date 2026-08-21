@@ -7,6 +7,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from backend.app.repositories.attendance_repository import AttendanceRepository
+from backend.app.services.settings_service import SettingsService
 
 
 XLSX_MEDIA_TYPE = (
@@ -26,6 +27,7 @@ WORKDAY_FILL = PatternFill("solid", fgColor="FFF200")
 PRESENT_FILL = PatternFill("solid", fgColor="57D16C")
 WARNING_FILL = PatternFill("solid", fgColor="F8CBAD")
 ABSENT_FILL = PatternFill("solid", fgColor="F4CCCC")
+LEAVE_FILL = PatternFill("solid", fgColor="BDD7EE")
 WEEKEND_FILL = PatternFill("solid", fgColor="FF4D4D")
 INVALID_DAY_FILL = PatternFill("solid", fgColor="D9D9D9")
 OT_INFO_FILL = PatternFill("solid", fgColor="5B9BD5")
@@ -40,6 +42,12 @@ def _safe_text(value):
     return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
 
 
+def _department_name(employee):
+    return _safe_text(
+        employee.department.name if employee.department else None
+    )
+
+
 def _shift_minutes(shift):
     if shift is None:
         return 0
@@ -50,7 +58,7 @@ def _shift_minutes(shift):
     return max(0, int((end - start).total_seconds() // 60))
 
 
-def _workday_code(daily, shift):
+def _workday_code(daily, shift, half_day_ratio=0.75):
     if daily is None:
         return "", None
     if daily.status == "ABSENT":
@@ -59,11 +67,13 @@ def _workday_code(daily, shift):
         return "TCI", 0
     if daily.status == "MISSING_CHECK_OUT":
         return "TCO", 0
+    if daily.status == "ON_LEAVE":
+        return "NP", 0
     if daily.status != "PRESENT":
         return _safe_text(daily.status), 0
 
     scheduled_minutes = _shift_minutes(shift)
-    if scheduled_minutes and daily.worked_minutes < scheduled_minutes * 0.75:
+    if scheduled_minutes and daily.worked_minutes < scheduled_minutes * half_day_ratio:
         return "0.5HC", 0.5
     return "HC", 1
 
@@ -74,6 +84,16 @@ def _status_label(status):
         "MISSING_CHECK_IN": "Thiếu check-in",
         "MISSING_CHECK_OUT": "Thiếu check-out",
         "ABSENT": "Vắng",
+        "ON_LEAVE": "Nghỉ phép",
+    }.get(status, status)
+
+
+def _overtime_status_label(status):
+    return {
+        "NONE": "",
+        "PENDING": "Chờ duyệt",
+        "APPROVED": "Đã duyệt",
+        "REJECTED": "Từ chối",
     }.get(status, status)
 
 
@@ -108,7 +128,7 @@ def build_daily_workbook(rows, date_from=None, date_to=None):
         title += f" TỪ {date_from.strftime('%d/%m/%Y')}"
     elif date_to:
         title += f" ĐẾN {date_to.strftime('%d/%m/%Y')}"
-    sheet.merge_cells("A1:L2")
+    sheet.merge_cells("A1:M2")
     title_cell = sheet["A1"]
     title_cell.value = title
     title_cell.font = Font(name="Arial", size=16, bold=True, color="FFFFFF")
@@ -136,6 +156,7 @@ def build_daily_workbook(rows, date_from=None, date_to=None):
         "Về sớm",
         "Tăng ca",
         "Trạng thái",
+        "Duyệt OT",
     ]
     for column, value in enumerate(headers, start=1):
         cell = sheet.cell(row=4, column=column, value=value)
@@ -149,7 +170,7 @@ def build_daily_workbook(rows, date_from=None, date_to=None):
         values = [
             _safe_text(employee.employee_code),
             _safe_text(employee.full_name),
-            _safe_text(employee.department),
+            _department_name(employee),
             _safe_text(shift.code),
             daily.work_date,
             daily.first_check_in,
@@ -159,6 +180,7 @@ def build_daily_workbook(rows, date_from=None, date_to=None):
             daily.early_leave_minutes,
             daily.overtime_minutes,
             _status_label(daily.status),
+            _overtime_status_label(daily.overtime_status),
         ]
         for column, value in enumerate(values, start=1):
             cell = sheet.cell(row=row_index, column=column, value=value)
@@ -172,14 +194,14 @@ def build_daily_workbook(rows, date_from=None, date_to=None):
         sheet.cell(row=row_index, column=6).number_format = "dd/mm/yyyy hh:mm"
         sheet.cell(row=row_index, column=7).number_format = "dd/mm/yyyy hh:mm"
         if row_index % 2 == 0:
-            for column in range(1, 13):
+            for column in range(1, 14):
                 sheet.cell(row=row_index, column=column).fill = PatternFill(
                     "solid", fgColor="EAF2F8"
                 )
 
     last_row = max(4, 4 + len(rows))
-    sheet.auto_filter.ref = f"A4:L{last_row}"
-    widths = [16, 28, 20, 12, 14, 20, 20, 12, 11, 11, 11, 20]
+    sheet.auto_filter.ref = f"A4:M{last_row}"
+    widths = [16, 28, 20, 12, 14, 20, 20, 12, 11, 11, 11, 20, 14]
     for column, width in enumerate(widths, start=1):
         sheet.column_dimensions[get_column_letter(column)].width = width
     sheet.page_setup.orientation = "landscape"
@@ -194,6 +216,7 @@ def build_monthly_workbook(
     attendance_rows,
     year,
     month,
+    half_day_ratio=0.75,
 ):
     workbook = _new_workbook(f"Báo cáo công tháng {month}/{year}")
     sheet = workbook.create_sheet(f"Thang {month:02d}-{year}")
@@ -252,7 +275,7 @@ def build_monthly_workbook(
             row_index - 2,
             _safe_text(employee.employee_code),
             _safe_text(employee.full_name),
-            _safe_text(employee.department),
+            _department_name(employee),
             _safe_text(shift.code if shift else ""),
         ]
         for column, value in enumerate(info_values, start=1):
@@ -282,7 +305,7 @@ def build_monthly_workbook(
             if item is None:
                 continue
             daily, daily_shift = item
-            code, _value = _workday_code(daily, daily_shift)
+            code, _value = _workday_code(daily, daily_shift, half_day_ratio)
             cell.value = code
             if code in {"HC", "0.5HC"}:
                 cell.fill = PRESENT_FILL
@@ -290,6 +313,8 @@ def build_monthly_workbook(
                 cell.fill = WARNING_FILL
             elif code == "V":
                 cell.fill = ABSENT_FILL
+            elif code == "NP":
+                cell.fill = LEAVE_FILL
 
         total_cell = sheet.cell(row=row_index, column=37)
         total_cell.value = (
@@ -315,7 +340,10 @@ def build_monthly_workbook(
     legend = sheet.cell(
         row=legend_row,
         column=1,
-        value="Quy ước: HC = đủ công; 0.5HC = nửa công; TCO = thiếu check-out; TCI = thiếu check-in; V = vắng",
+        value=(
+            "Quy ước: HC = đủ công; 0.5HC = nửa công; TCO = thiếu check-out; "
+            "TCI = thiếu check-in; V = vắng; NP = nghỉ phép"
+        ),
     )
     legend.font = Font(name="Times New Roman", italic=True, size=10)
     legend.alignment = Alignment(horizontal="left", vertical="center")
@@ -336,10 +364,12 @@ def _add_overtime_sheet(workbook, attendance_rows):
     sheet.sheet_view.showGridLines = False
     sheet.freeze_panes = "E3"
 
+    # Only overtime an admin has signed off on is billable, so the sheet is the
+    # approved set rather than everything the clock produced.
     overtime_rows = [
         (daily, employee, shift)
         for daily, employee, shift in attendance_rows
-        if daily.overtime_minutes > 0
+        if daily.overtime_minutes > 0 and daily.overtime_status == "APPROVED"
     ]
     overtime_dates = sorted({daily.work_date for daily, _employee, _shift in overtime_rows})
     employee_data = {}
@@ -420,7 +450,7 @@ def _add_overtime_sheet(workbook, attendance_rows):
                 row_index - 2,
                 _safe_text(employee.employee_code),
                 _safe_text(employee.full_name),
-                _safe_text(employee.department),
+                _department_name(employee),
             ]
             for column, value in enumerate(info_values, start=1):
                 cell = sheet.cell(row=row_index, column=column, value=value)
@@ -487,13 +517,13 @@ def _add_overtime_sheet(workbook, attendance_rows):
     sheet.print_area = f"A1:{get_column_letter(note_column)}{last_row}"
 
 
-def build_monthly_report(db, year, month, employee_id=None, department=None):
+def build_monthly_report(db, year, month, employee_id=None, department_id=None):
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
     employees = AttendanceRepository.list_employees_for_report(
         db,
         employee_id=employee_id,
-        department=department,
+        department_id=department_id,
         date_from=start_date,
         date_to=end_date,
     )
@@ -502,6 +532,12 @@ def build_monthly_report(db, year, month, employee_id=None, department=None):
         date_from=start_date,
         date_to=end_date,
         employee_id=employee_id,
-        department=department,
+        department_id=department_id,
     )
-    return build_monthly_workbook(employees, rows, year, month)
+    return build_monthly_workbook(
+        employees,
+        rows,
+        year,
+        month,
+        half_day_ratio=SettingsService.get_float(db, "HALF_DAY_RATIO"),
+    )

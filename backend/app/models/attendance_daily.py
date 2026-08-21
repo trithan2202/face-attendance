@@ -84,6 +84,12 @@ class AttendanceDaily(Base):
         nullable=False
     )
 
+    overtime_status: Mapped[str] = mapped_column(
+        String(20),
+        default="NONE",
+        nullable=False
+    )
+
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False

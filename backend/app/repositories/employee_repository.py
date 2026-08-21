@@ -63,20 +63,25 @@
 
 from sqlalchemy import func, or_, select
 
-from backend.app.models import Employee, FaceEmbedding
+from backend.app.models import Department, Employee, FaceEmbedding
 
 
 class EmployeeRepository:
     @staticmethod
     def list(db, search=None, status=None):
-        stmt = select(Employee).order_by(Employee.employee_code)
+        stmt = (
+            select(Employee)
+            .outerjoin(Department, Department.id == Employee.department_id)
+            .order_by(Employee.employee_code)
+        )
         if search:
             pattern = f"%{search.strip()}%"
             stmt = stmt.where(
                 or_(
                     Employee.employee_code.ilike(pattern),
                     Employee.full_name.ilike(pattern),
-                    Employee.department.ilike(pattern),
+                    Employee.national_id.ilike(pattern),
+                    Department.name.ilike(pattern),
                 )
             )
         if status:
@@ -97,6 +102,14 @@ class EmployeeRepository:
         )
 
     @staticmethod
+    def get_by_national_id(db, national_id):
+        if not national_id:
+            return None
+        return db.scalar(
+            select(Employee).where(Employee.national_id == national_id)
+        )
+
+    @staticmethod
     def create(
         db,
         employee_code,
@@ -104,14 +117,16 @@ class EmployeeRepository:
         shift_id,
         email=None,
         phone=None,
-        department=None
+        national_id=None,
+        department_id=None
     ):
         employee = Employee(
             employee_code=employee_code,
             full_name=full_name,
             email=email,
             phone=phone,
-            department=department,
+            national_id=national_id,
+            department_id=department_id,
             shift_id=shift_id,
             status="PENDING_ENROLLMENT"
         )

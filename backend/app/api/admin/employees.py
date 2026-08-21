@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from backend.app.api.dependencies import get_current_admin
 from backend.app.core.database import get_db
+from backend.app.repositories.department_repository import DepartmentRepository
 from backend.app.repositories.employee_repository import EmployeeRepository
 from backend.app.repositories.shift_repository import ShiftRepository
 from backend.app.schemas import EmployeeCreate, EmployeeResponse, EmployeeUpdate
@@ -38,6 +39,7 @@ def _response(db, employee):
             if column.name not in {"id"}
         },
         id=employee.id,
+        department=employee.department.name if employee.department else None,
         enrollment_status=enrollment_status,
         sample_count=sample_count,
         has_centroid=has_centroid,
@@ -72,6 +74,13 @@ def create_employee(payload: EmployeeCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=409, detail="Mã nhân viên đã tồn tại")
     if ShiftRepository.get_by_id(db, payload.shift_id) is None:
         raise HTTPException(status_code=422, detail="Ca làm không tồn tại")
+    if (
+        payload.department_id is not None
+        and DepartmentRepository.get_by_id(db, payload.department_id) is None
+    ):
+        raise HTTPException(status_code=422, detail="Phòng ban không tồn tại")
+    if EmployeeRepository.get_by_national_id(db, payload.national_id):
+        raise HTTPException(status_code=409, detail="Số CCCD đã tồn tại")
     employee = EmployeeRepository.create(db, **payload.model_dump())
     db.commit()
     logger.info(
@@ -98,6 +107,14 @@ def update_employee(
         raise HTTPException(status_code=409, detail="Mã nhân viên đã tồn tại")
     if ShiftRepository.get_by_id(db, payload.shift_id) is None:
         raise HTTPException(status_code=422, detail="Ca làm không tồn tại")
+    if (
+        payload.department_id is not None
+        and DepartmentRepository.get_by_id(db, payload.department_id) is None
+    ):
+        raise HTTPException(status_code=422, detail="Phòng ban không tồn tại")
+    duplicate_id = EmployeeRepository.get_by_national_id(db, payload.national_id)
+    if duplicate_id is not None and duplicate_id.id != employee.id:
+        raise HTTPException(status_code=409, detail="Số CCCD đã tồn tại")
     sample_count, has_centroid = EmployeeRepository.enrollment_stats(db, employee.id)
     if payload.status == "ACTIVE" and not (sample_count == 10 and has_centroid):
         raise HTTPException(

@@ -11,10 +11,14 @@ from fastapi.responses import JSONResponse
 from backend.app.api.auth import router as auth_router
 from backend.app.api.admin.employees import router as employees_router
 from backend.app.api.admin.attendance import router as attendance_router
+from backend.app.api.admin.departments import router as departments_router
 from backend.app.api.admin.enrollment import router as enrollment_router
+from backend.app.api.admin.leave_requests import router as leave_requests_router
+from backend.app.api.admin.settings import router as settings_router
 from backend.app.api.admin.shifts import router as shifts_router
 from backend.app.api.system import router as system_router
 from backend.app.api.kiosk import router as kiosk_router
+from backend.app.api.public import router as public_router
 from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging, log_extra, request_id_context
 
@@ -124,7 +128,11 @@ async def unexpected_exception_handler(request: Request, exc: Exception):
 app.include_router(system_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(shifts_router, prefix="/api")
+app.include_router(departments_router, prefix="/api")
 app.include_router(employees_router, prefix="/api")
 app.include_router(enrollment_router, prefix="/api")
 app.include_router(attendance_router, prefix="/api")
+app.include_router(leave_requests_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 app.include_router(kiosk_router, prefix="/api")
+app.include_router(public_router, prefix="/api")

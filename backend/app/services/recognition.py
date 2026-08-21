@@ -3,7 +3,7 @@ import logging
 import secrets
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -11,6 +11,7 @@ from attendance.attendance_service import AttendanceService
 from backend.app.core.config import settings
 from backend.app.core.logging import log_extra
 from backend.app.repositories.face_repository import FaceRepository
+from backend.app.services.settings_service import SettingsService
 from face_engine.matcher import FaceMatcher
 
 
@@ -21,6 +22,16 @@ def create_face_engine():
 
 
 logger = logging.getLogger("face_attendance.recognition")
+
+
+# Why a recognised face did not turn into an attendance punch.
+SUPPRESSED_MESSAGES = {
+    "EMPLOYEE_NOT_FOUND": "Không tìm thấy hồ sơ nhân viên",
+    "EMPLOYEE_NOT_ACTIVE": "Nhân viên đã ngưng hoạt động",
+    "SHIFT_MISSING": "Nhân viên chưa được gán ca làm",
+    "DUPLICATE_PUNCH": "Bạn vừa quét xong, vui lòng thử lại sau ít phút",
+    "TOO_EARLY_CHECKOUT": "Chưa đến thời điểm có thể check-out",
+}
 
 
 @dataclass
@@ -38,6 +49,7 @@ class RecognitionSession:
     full_name: str | None = None
     similarity: float | None = None
     event_type: str | None = None
+    faces: list = field(default_factory=list)
 
 
 class RecognitionService:
@@ -48,10 +60,15 @@ class RecognitionService:
         self._lock = threading.RLock()
         self.clock = clock or time.monotonic
         self.matcher = FaceMatcher(settings.FACE_SIMILARITY_THRESHOLD)
-        self.attendance = AttendanceService(settings.MIN_CHECKOUT_MINUTES)
+        self.attendance = AttendanceService(
+            settings.MIN_CHECKOUT_MINUTES,
+            settings.MIN_PUNCH_INTERVAL_SECONDS,
+        )
+        self.hold_seconds = settings.RECOGNITION_HOLD_SECONDS
 
     def start(self, db):
         with self._lock:
+            self._apply_settings(db)
             data = FaceRepository.get_centroids(db)
             session = RecognitionSession(
                 session_id=secrets.token_urlsafe(24),
@@ -66,7 +83,7 @@ class RecognitionService:
                     "recognition_started",
                     session_id=session.session_id,
                     known_employee_count=len(session.known_faces),
-                    required_hold_seconds=settings.RECOGNITION_HOLD_SECONDS,
+                    required_hold_seconds=self.hold_seconds,
                 ),
             )
             return session
@@ -93,7 +110,12 @@ class RecognitionService:
             if session.state != "RECOGNIZING":
                 return session
 
+            # Thresholds are read per frame so a change in the settings screen
+            # takes effect without restarting the backend.
+            self._apply_settings(db)
+
             faces = self._detect(frame)
+            session.faces = self._face_boxes(frame, faces)
             if len(faces) != 1:
                 previous_message = session.message
                 self._reset_stability(session)
@@ -128,7 +150,7 @@ class RecognitionService:
                             "recognition_not_matched",
                             session_id=session.session_id,
                             similarity=round(similarity, 4) if similarity >= 0 else None,
-                            threshold=settings.FACE_SIMILARITY_THRESHOLD,
+                            threshold=self.matcher.threshold,
                         ),
                     )
                 return session
@@ -148,12 +170,15 @@ class RecognitionService:
             session.last_matched_at = now
             session.employee_code = code
             session.full_name = session.metadata[code]["full_name"]
+            if session.faces:
+                session.faces[0]["label"] = session.full_name
+                session.faces[0]["matched"] = True
             remaining = max(
-                0.0, settings.RECOGNITION_HOLD_SECONDS - session.stable_seconds
+                0.0, self.hold_seconds - session.stable_seconds
             )
             session.message = (
                 "Đang xác nhận khuôn mặt "
-                f"{session.stable_seconds:.1f}/{settings.RECOGNITION_HOLD_SECONDS:g} giây"
+                f"{session.stable_seconds:.1f}/{self.hold_seconds:g} giây"
             )
             logger.info(
                 "Recognition match observed",
@@ -163,11 +188,11 @@ class RecognitionService:
                     employee_code=code,
                     similarity=round(similarity, 4),
                     stable_seconds=round(session.stable_seconds, 2),
-                    required_seconds=settings.RECOGNITION_HOLD_SECONDS,
+                    required_seconds=self.hold_seconds,
                     remaining_seconds=round(remaining, 2),
                 ),
             )
-            if session.stable_seconds >= settings.RECOGNITION_HOLD_SECONDS:
+            if session.stable_seconds >= self.hold_seconds:
                 self._record_attendance(db, session, face)
             return session
 
@@ -178,10 +203,52 @@ class RecognitionService:
             math.ceil(settings.RECOGNITION_SESSION_TIMEOUT_SECONDS - elapsed),
         )
 
+    def _apply_settings(self, db):
+        self.matcher.threshold = SettingsService.get_float(
+            db, "FACE_SIMILARITY_THRESHOLD"
+        )
+        self.hold_seconds = SettingsService.get_float(
+            db, "RECOGNITION_HOLD_SECONDS"
+        )
+        self.attendance.min_checkout_minutes = SettingsService.get_int(
+            db, "MIN_CHECKOUT_MINUTES"
+        )
+        self.attendance.min_punch_interval_seconds = SettingsService.get_int(
+            db, "MIN_PUNCH_INTERVAL_SECONDS"
+        )
+
     def _detect(self, frame):
         if self._engine is None:
             self._engine = self.engine_factory()
         return self._engine.detect(frame)
+
+    @staticmethod
+    def _face_boxes(frame, faces):
+        """Normalise detected boxes to 0..1 so the kiosk can overlay them."""
+        height, width = frame.shape[:2]
+        if not width or not height:
+            return []
+
+        def ratio(value, total):
+            return min(1.0, max(0.0, float(value) / total))
+
+        boxes = []
+        for face in faces:
+            x1, y1, x2, y2 = (float(value) for value in face.bbox)
+            left = ratio(x1, width)
+            top = ratio(y1, height)
+            boxes.append(
+                {
+                    "x": round(left, 4),
+                    "y": round(top, 4),
+                    "width": round(min(ratio(x2, width) - left, 1.0 - left), 4),
+                    "height": round(min(ratio(y2, height) - top, 1.0 - top), 4),
+                    "score": round(float(face.det_score), 4),
+                    "label": None,
+                    "matched": False,
+                }
+            )
+        return boxes
 
     @staticmethod
     def _reset_stability(session):
@@ -202,15 +269,19 @@ class RecognitionService:
             similarity=session.similarity,
             detection_score=float(face.det_score),
         )
-        if result is None:
+        if result is None or result.get("event_type") is None:
+            reason = (result or {}).get("reason", "UNKNOWN")
             session.state = "COOLDOWN"
-            session.message = "Chưa đến thời điểm có thể check-out"
+            session.message = SUPPRESSED_MESSAGES.get(
+                reason, "Chưa thể ghi nhận chấm công"
+            )
             logger.info(
-                "Attendance event suppressed by cooldown",
+                "Attendance event suppressed",
                 extra=log_extra(
-                    "attendance_cooldown",
+                    "attendance_suppressed",
                     session_id=session.session_id,
                     employee_code=session.employee_code,
+                    reason=reason,
                 ),
             )
             return

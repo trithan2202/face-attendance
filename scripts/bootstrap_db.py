@@ -34,10 +34,14 @@ def main():
     command.upgrade(config, "head")
 
     from scripts.seed_shift import main as seed_shift
+    from scripts.seed_department import main as seed_department
     from scripts.seed_admin import main as seed_admin
+    from scripts.seed_system_settings import main as seed_system_settings
 
     seed_shift()
+    seed_department()
     seed_admin()
+    seed_system_settings()
     print("[DB] Migrations and seed completed")
 
 

@@ -7,6 +7,7 @@ from backend.app.models import (
     AttendanceAdjustment,
     AttendanceDaily,
     AttendanceEvent,
+    Department,
     Employee,
     Shift,
 )
@@ -18,7 +19,7 @@ class AttendanceRepository:
     def list_employees_for_report(
         db,
         employee_id=None,
-        department=None,
+        department_id=None,
         date_from=None,
         date_to=None,
     ):
@@ -40,8 +41,8 @@ class AttendanceRepository:
             stmt = stmt.where(Employee.status != "INACTIVE")
         if employee_id:
             stmt = stmt.where(Employee.id == employee_id)
-        if department:
-            stmt = stmt.where(Employee.department == department)
+        if department_id:
+            stmt = stmt.where(Employee.department_id == department_id)
         return list(db.execute(stmt).all())
 
     @staticmethod
@@ -50,13 +51,14 @@ class AttendanceRepository:
         date_from=None,
         date_to=None,
         employee_id=None,
-        department=None,
+        department_id=None,
         status=None,
     ):
         stmt = (
             select(AttendanceDaily, Employee, Shift)
             .join(Employee, Employee.id == AttendanceDaily.employee_id)
             .join(Shift, Shift.id == AttendanceDaily.shift_id)
+            .outerjoin(Department, Department.id == Employee.department_id)
             .order_by(AttendanceDaily.work_date.desc(), Employee.employee_code)
         )
         if date_from:
@@ -65,8 +67,8 @@ class AttendanceRepository:
             stmt = stmt.where(AttendanceDaily.work_date <= date_to)
         if employee_id:
             stmt = stmt.where(AttendanceDaily.employee_id == employee_id)
-        if department:
-            stmt = stmt.where(Employee.department == department)
+        if department_id:
+            stmt = stmt.where(Employee.department_id == department_id)
         if status:
             stmt = stmt.where(AttendanceDaily.status == status)
         return list(db.execute(stmt).all())
@@ -84,14 +86,19 @@ class AttendanceRepository:
         return db.execute(stmt).first()
 
     @staticmethod
-    def get_events_for_daily(db, daily, shift):
-        start = daily.work_date - timedelta(days=1)
-        end = daily.work_date + timedelta(days=2)
+    def list_events_for_work_date(db, employee_id, work_date, shift):
+        """Every punch that belongs to one work date.
+
+        Keyed on the work date rather than a daily row so it can also be called
+        before the first punch of the day has created that row.
+        """
+        start = work_date - timedelta(days=1)
+        end = work_date + timedelta(days=2)
         events = list(
             db.scalars(
                 select(AttendanceEvent)
                 .where(
-                    AttendanceEvent.employee_id == daily.employee_id,
+                    AttendanceEvent.employee_id == employee_id,
                     AttendanceEvent.recognized_at >= start,
                     AttendanceEvent.recognized_at < end,
                 )
@@ -101,8 +108,14 @@ class AttendanceRepository:
         return [
             event
             for event in events
-            if WorkDateResolver.resolve(event.recognized_at, shift) == daily.work_date
+            if WorkDateResolver.resolve(event.recognized_at, shift) == work_date
         ]
+
+    @staticmethod
+    def get_events_for_daily(db, daily, shift):
+        return AttendanceRepository.list_events_for_work_date(
+            db, daily.employee_id, daily.work_date, shift
+        )
 
     @staticmethod
     def create_adjustment(

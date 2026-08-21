@@ -10,8 +10,27 @@ const captureJpeg = (video) => new Promise((resolve, reject) => {
   canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Không thể chụp frame')), 'image/jpeg', 0.82);
 });
 
+// The backend returns boxes normalised to the submitted frame. The preview is
+// mirrored and rendered with object-cover, so the box has to be mapped onto the
+// visible part of the video before it can be positioned in the container.
+const boxStyle = (face, video, container) => {
+  if (!video.width || !video.height || !container.width || !container.height) return null;
+  const scale = Math.max(container.width / video.width, container.height / video.height);
+  const displayWidth = video.width * scale;
+  const displayHeight = video.height * scale;
+  const offsetX = (container.width - displayWidth) / 2;
+  const offsetY = (container.height - displayHeight) / 2;
+  return {
+    left: offsetX + (1 - face.x - face.width) * displayWidth,
+    top: offsetY + face.y * displayHeight,
+    width: face.width * displayWidth,
+    height: face.height * displayHeight,
+  };
+};
+
 const Kiosk = () => {
   const videoRef = useRef(null);
+  const containerRef = useRef(null);
   const streamRef = useRef(null);
   const sessionRef = useRef(null);
   const busyRef = useRef(false);
@@ -21,6 +40,9 @@ const Kiosk = () => {
   const [message, setMessage] = useState('Đang mở camera...');
   const [result, setResult] = useState(null);
   const [holdProgress, setHoldProgress] = useState({ current: 0, required: 3 });
+  const [faces, setFaces] = useState([]);
+  const [videoSize, setVideoSize] = useState({ width: 0, height: 0 });
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach(track => track.stop());
@@ -40,6 +62,7 @@ const Kiosk = () => {
   const resetCycle = useCallback(async () => {
     try {
       setResult(null);
+      setFaces([]);
       setHoldProgress({ current: 0, required: 3 });
       const health = await api.system.workerStatus().catch(() => null);
       if (health && !health.online) setMessage('Worker camera đang offline; kiosk vẫn dùng camera trình duyệt');
@@ -79,15 +102,30 @@ const Kiosk = () => {
   }, [resetCycle, stopCamera]);
 
   useEffect(() => {
+    const element = containerRef.current;
+    if (!element) return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      setContainerSize({ width: entry.contentRect.width, height: entry.contentRect.height });
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     if (status !== 'recognizing') return undefined;
     let active = true;
     const submit = async () => {
       if (!active || busyRef.current || !sessionRef.current) return;
       busyRef.current = true;
       try {
-        const blob = await captureJpeg(videoRef.current);
+        const video = videoRef.current;
+        const blob = await captureJpeg(video);
+        setVideoSize((current) => (current.width === video.videoWidth && current.height === video.videoHeight
+          ? current
+          : { width: video.videoWidth, height: video.videoHeight }));
         const response = await api.kiosk.submitRecognitionFrame(sessionRef.current.id, blob);
         setMessage(response.message);
+        setFaces(response.faces || []);
         setHoldProgress({ current: response.stable_seconds, required: response.required_seconds });
         if (response.state === 'COMPLETED') {
           sessionRef.current = null;
@@ -106,6 +144,7 @@ const Kiosk = () => {
         sessionRef.current = null;
         const backendOffline = err?.status === 0;
         if (backendOffline) stopCamera();
+        setFaces([]);
         setStatus('error');
         setMessage(err.message || 'Nhận diện thất bại');
         setResult({ error: err.message || 'Nhận diện thất bại', backendOffline });
@@ -134,25 +173,52 @@ const Kiosk = () => {
       <div className="absolute top-8 left-8 z-20 px-4 py-2 rounded-full font-medium bg-neutral-800/80 border border-neutral-700">
         {message}
       </div>
-      <div className="relative w-full max-w-5xl aspect-video rounded-2xl overflow-hidden border border-neutral-700 shadow-2xl bg-neutral-800">
+      <a
+        href="/tra-cuu"
+        className="absolute top-8 right-8 z-20 px-4 py-2 rounded-full text-sm font-medium bg-neutral-800/80 border border-neutral-700 text-neutral-300 hover:text-white hover:border-neutral-500 transition-colors"
+      >
+        Tra cứu chấm công
+      </a>
+      <div ref={containerRef} className="relative w-full max-w-5xl aspect-video rounded-2xl overflow-hidden border border-neutral-700 shadow-2xl bg-neutral-800">
         <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover -scale-x-100" />
-        {status === 'recognizing' && (
-          <>
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 border-2 border-primary-500 rounded-3xl shadow-[0_0_40px_rgba(99,102,241,0.5)]" />
-            <div className="absolute inset-x-8 bottom-8 h-3 bg-black/60 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-primary-500 transition-all duration-300"
-                style={{ width: `${Math.min(100, (holdProgress.current / holdProgress.required) * 100)}%` }}
-              />
+        {faces.map((face, index) => {
+          const style = boxStyle(face, videoSize, containerSize);
+          if (!style) return null;
+          const matched = face.matched;
+          return (
+            <div
+              key={`${index}-${face.x}-${face.y}`}
+              style={style}
+              className={`absolute rounded-lg border-2 transition-all duration-200 ease-out ${
+                matched
+                  ? 'border-success-500 shadow-[0_0_24px_rgba(16,185,129,0.45)]'
+                  : 'border-warning-500 shadow-[0_0_24px_rgba(245,158,11,0.35)]'
+              }`}
+            >
+              <span
+                className={`absolute -top-7 left-0 whitespace-nowrap rounded px-2 py-0.5 text-sm font-semibold text-white ${
+                  matched ? 'bg-success-500' : 'bg-warning-500'
+                }`}
+              >
+                {matched ? face.label : 'Không xác định'}
+              </span>
             </div>
-          </>
+          );
+        })}
+        {status === 'recognizing' && (
+          <div className="absolute inset-x-8 bottom-8 h-3 bg-black/60 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-primary-500 transition-all duration-300"
+              style={{ width: `${Math.min(100, (holdProgress.current / holdProgress.required) * 100)}%` }}
+            />
+          </div>
         )}
       </div>
       {(status === 'success' || status === 'error') && (
         <div className="absolute bottom-10 left-1/2 -translate-x-1/2 z-30 w-full max-w-2xl px-4">
-          <div className={`p-6 rounded-2xl shadow-2xl flex items-center gap-6 text-white ${status === 'success' ? 'bg-success-600' : 'bg-danger-600'}`}>
+          <div className={`p-6 rounded-2xl shadow-2xl flex items-center gap-6 text-white ${status === 'success' ? 'bg-success-700' : 'bg-danger-700'}`}>
             {status === 'success' ? <CheckCircle className="w-16 h-16" /> : <XCircle className="w-16 h-16" />}
-            <div><h2 className="text-3xl font-bold mb-2">{status === 'success' ? (result.event_type === 'CHECK_OUT' ? 'Check-out successful' : 'Check-in successful') : 'Unable to record attendance'}</h2>
+            <div><h2 className="text-3xl font-bold mb-2">{status === 'success' ? (result.event_type === 'CHECK_OUT' ? 'Check-out thành công' : 'Check-in thành công') : 'Không thể ghi nhận chấm công'}</h2>
               <p className="text-lg">{status === 'success' ? `${result.full_name} (${result.employee_code})` : result?.error}</p></div>
           </div>
         </div>

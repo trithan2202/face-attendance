@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, CalendarDays, ClipboardList, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Building2, CalendarDays, ClipboardList, CalendarOff, Settings as SettingsIcon, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { ToastProvider } from '../components/ui/Toast';
 
@@ -14,10 +14,13 @@ const AdminLayout = () => {
   };
 
   const navItems = [
-    { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/admin/employees', icon: Users, label: 'Employees' },
-    { to: '/admin/shifts', icon: CalendarDays, label: 'Shifts' },
-    { to: '/admin/attendance', icon: ClipboardList, label: 'Attendance' },
+    { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Tổng quan' },
+    { to: '/admin/employees', icon: Users, label: 'Nhân viên' },
+    { to: '/admin/departments', icon: Building2, label: 'Phòng ban' },
+    { to: '/admin/shifts', icon: CalendarDays, label: 'Ca làm' },
+    { to: '/admin/attendance', icon: ClipboardList, label: 'Chấm công' },
+    { to: '/admin/leave', icon: CalendarOff, label: 'Nghỉ phép' },
+    { to: '/admin/settings', icon: SettingsIcon, label: 'Cấu hình' },
   ];
 
   return (
@@ -26,7 +29,7 @@ const AdminLayout = () => {
         {/* Sidebar */}
         <aside className="w-64 bg-neutral-900 text-white flex flex-col">
           <div className="h-16 flex items-center px-6 border-b border-neutral-800">
-            <span className="text-lg font-bold">Attendance System</span>
+            <span className="text-lg font-bold">Hệ thống chấm công</span>
           </div>
           <nav className="flex-1 py-4 flex flex-col gap-1 px-3">
             {navItems.map((item) => (
@@ -63,7 +66,7 @@ const AdminLayout = () => {
              {/* Title can be dynamic if we want, for now it's handled in pages */}
              <div className="flex-1"></div>
              <div className="flex items-center gap-4">
-                <span className="text-sm font-medium text-neutral-600">Admin Portal</span>
+                <span className="text-sm font-medium text-neutral-600">Trang quản trị</span>
              </div>
           </header>
           <main className="flex-1 p-6 overflow-y-auto">

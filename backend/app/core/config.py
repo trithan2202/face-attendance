@@ -59,6 +59,10 @@ class Settings:
             os.getenv("RECOGNITION_MAX_FRAME_GAP_SECONDS", "1")
         )
         self.MIN_CHECKOUT_MINUTES = int(os.getenv("MIN_CHECKOUT_MINUTES", "60"))
+        self.MIN_PUNCH_INTERVAL_SECONDS = int(
+            os.getenv("MIN_PUNCH_INTERVAL_SECONDS", "60")
+        )
+        self.HALF_DAY_RATIO = float(os.getenv("HALF_DAY_RATIO", "0.75"))
         self.ENROLLMENT_SESSION_TIMEOUT_SECONDS = int(
             os.getenv("ENROLLMENT_SESSION_TIMEOUT_SECONDS", "180")
         )

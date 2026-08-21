@@ -13,6 +13,10 @@ const Badge = ({ children, status, className }) => {
     'Late': 'bg-warning-100 text-warning-700',
     'Absent': 'bg-danger-100 text-danger-700',
     'Missing check-out': 'bg-danger-100 text-danger-700',
+    'On leave': 'bg-primary-100 text-primary-700',
+    'Pending': 'bg-warning-100 text-warning-700',
+    'Approved': 'bg-success-100 text-success-700',
+    'Rejected': 'bg-danger-100 text-danger-700',
   };
 
   const defaultStyle = 'bg-neutral-100 text-neutral-700';

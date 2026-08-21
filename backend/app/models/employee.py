@@ -36,9 +36,16 @@ class Employee(Base):
         nullable=True
     )
 
-    department: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True
+    national_id: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        index=True
+    )
+
+    department_id: Mapped[int | None] = mapped_column(
+        ForeignKey("departments.id"),
+        nullable=True,
+        index=True
     )
 
     shift_id: Mapped[int | None] = mapped_column(
@@ -70,6 +77,8 @@ class Employee(Base):
         "Shift",
         back_populates="employees"
     )
+
+    department = relationship("Department")
 
     embeddings = relationship(
         "FaceEmbedding",

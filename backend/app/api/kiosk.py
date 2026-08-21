@@ -4,6 +4,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile, status
 
 from backend.app.core.config import settings
 from backend.app.schemas import (
+    FaceBox,
     LivenessFrameResponse,
     LivenessSessionResponse,
     RecognitionSessionResponse,
@@ -99,12 +100,13 @@ def _recognition_response(session):
         state=session.state,
         message=session.message,
         stable_seconds=round(session.stable_seconds, 2),
-        required_seconds=settings.RECOGNITION_HOLD_SECONDS,
+        required_seconds=recognition_service.hold_seconds,
         employee_code=session.employee_code,
         full_name=session.full_name,
         similarity=session.similarity,
         event_type=session.event_type,
         expires_in_seconds=recognition_service.expires_in(session),
+        faces=[FaceBox(**box) for box in session.faces],
     )
 
 

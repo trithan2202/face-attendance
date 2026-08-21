@@ -14,7 +14,7 @@ const Select = React.forwardRef(({ className, label, error, options = [], ...pro
         )}
         {...props}
       >
-        <option value="" disabled>Select an option</option>
+        <option value="" disabled>Chọn một tùy chọn</option>
         {options.map((opt, i) => (
           <option key={i} value={opt.value}>{opt.label}</option>
         ))}

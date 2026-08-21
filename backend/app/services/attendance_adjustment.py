@@ -18,6 +18,7 @@ TRACKED_FIELDS = (
     "late_minutes",
     "early_leave_minutes",
     "overtime_minutes",
+    "overtime_status",
     "status",
     "is_late",
     "is_early_leave",
@@ -85,28 +86,4 @@ class AttendanceAdjustmentService:
 
     @staticmethod
     def _recalculate(daily, shift):
-        daily.worked_minutes = 0
-        daily.late_minutes = 0
-        daily.early_leave_minutes = 0
-        daily.overtime_minutes = 0
-        daily.is_late = False
-        daily.is_early_leave = False
-        daily.is_overtime = False
-
-        if daily.first_check_in is None:
-            daily.status = "MISSING_CHECK_IN" if daily.last_check_out else "ABSENT"
-            return
-
-        daily.is_late, daily.late_minutes = AttendanceCalculator.calculate_late(
-            daily.first_check_in, daily.work_date, shift
-        )
-        if daily.last_check_out is None:
-            daily.status = "MISSING_CHECK_OUT"
-            return
-
-        metrics = AttendanceCalculator.calculate_checkout(
-            daily.first_check_in, daily.last_check_out, daily.work_date, shift
-        )
-        for field, value in metrics.items():
-            setattr(daily, field, value)
-        daily.status = "PRESENT"
+        AttendanceCalculator.recalculate(daily, shift)

@@ -12,17 +12,17 @@ import Input from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
 
 const shiftSchema = z.object({
-  code: z.string().min(1, 'Code is required'),
-  name: z.string().min(1, 'Name is required'),
-  startTime: z.string().min(1, 'Start time is required'),
-  endTime: z.string().min(1, 'End time is required'),
-  gracePeriod: z.coerce.number().min(0, 'Grace period must be >= 0'),
+  code: z.string().min(1, 'Vui lòng nhập mã ca'),
+  name: z.string().min(1, 'Vui lòng nhập tên ca'),
+  startTime: z.string().min(1, 'Vui lòng nhập giờ bắt đầu'),
+  endTime: z.string().min(1, 'Vui lòng nhập giờ kết thúc'),
+  gracePeriod: z.coerce.number().min(0, 'Thời gian ân hạn phải >= 0'),
   overnight: z.boolean().default(false),
 }).refine(data => {
   if (data.overnight) return true;
   return data.startTime < data.endTime;
 }, {
-  message: "End time must be after start time unless overnight",
+  message: "Giờ kết thúc phải sau giờ bắt đầu (trừ ca qua đêm)",
   path: ["endTime"],
 });
 
@@ -49,7 +49,7 @@ const Shifts = () => {
       const data = await mockApi.shifts.list();
       setShifts(data);
     } catch (err) {
-      addToast('Failed to load shifts', 'error');
+      addToast('Không thể tải danh sách ca làm', 'error');
     } finally {
       setLoading(false);
     }
@@ -74,42 +74,42 @@ const Shifts = () => {
     try {
       if (editingId) {
         await mockApi.shifts.update(editingId, data);
-        addToast('Shift updated successfully', 'success');
+        addToast('Cập nhật ca làm thành công', 'success');
       } else {
         await mockApi.shifts.create(data);
-        addToast('Shift created successfully', 'success');
+        addToast('Tạo ca làm thành công', 'success');
       }
       setIsModalOpen(false);
       loadData();
     } catch (err) {
-      addToast('Operation failed', 'error');
+      addToast('Thao tác thất bại', 'error');
     }
   };
 
   const handleDelete = async () => {
     try {
       await mockApi.shifts.delete(deleteId);
-      addToast('Shift deleted', 'success');
+      addToast('Đã xóa ca làm', 'success');
       setIsDeleteModalOpen(false);
       loadData();
     } catch (err) {
-      addToast('Failed to delete shift', 'error');
+      addToast('Không thể xóa ca làm', 'error');
     }
   };
 
   const columns = [
-    { header: 'Code', accessorKey: 'code' },
-    { header: 'Name', accessorKey: 'name' },
-    { header: 'Start Time', accessorKey: 'startTime' },
-    { header: 'End Time', accessorKey: 'endTime' },
-    { header: 'Grace Period (min)', accessorKey: 'gracePeriod' },
-    { header: 'Overnight', cell: (row) => <Badge status={row.overnight ? 'Active' : 'Inactive'}>{row.overnight ? 'Yes' : 'No'}</Badge> },
-    { header: 'Actions', cell: (row) => (
+    { header: 'Mã ca', accessorKey: 'code' },
+    { header: 'Tên ca', accessorKey: 'name' },
+    { header: 'Giờ bắt đầu', accessorKey: 'startTime' },
+    { header: 'Giờ kết thúc', accessorKey: 'endTime' },
+    { header: 'Thời gian ân hạn (phút)', accessorKey: 'gracePeriod' },
+    { header: 'Qua đêm', cell: (row) => <Badge status={row.overnight ? 'Active' : 'Inactive'}>{row.overnight ? 'Có' : 'Không'}</Badge> },
+    { header: 'Thao tác', cell: (row) => (
       <div className="flex gap-2">
-        <button onClick={() => handleOpenModal(row)} className="p-1.5 text-neutral-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Edit">
+        <button onClick={() => handleOpenModal(row)} className="p-1.5 text-neutral-500 hover:text-primary-600 hover:bg-primary-50 rounded" title="Sửa">
           <Edit2 className="w-4 h-4" />
         </button>
-        <button onClick={() => { setDeleteId(row.id); setIsDeleteModalOpen(true); }} className="p-1.5 text-danger-500 rounded" title="Delete">
+        <button onClick={() => { setDeleteId(row.id); setIsDeleteModalOpen(true); }} className="p-1.5 text-danger-500 rounded" title="Xóa">
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
@@ -119,46 +119,46 @@ const Shifts = () => {
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-neutral-900">Shifts</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">Ca làm</h1>
         <Button onClick={() => handleOpenModal()} className="gap-2">
-          <Plus className="w-4 h-4" /> Add Shift
+          <Plus className="w-4 h-4" /> Thêm ca làm
         </Button>
       </div>
 
       <Table columns={columns} data={shifts} isLoading={loading} />
 
-      {/* Add/Edit Modal */}
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingId ? 'Edit Shift' : 'Add Shift'}>
+      {/* Modal Thêm/Sửa */}
+      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingId ? 'Sửa ca làm' : 'Thêm ca làm'}>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-4">
-          <Input label="Shift Code" {...register('code')} error={errors.code?.message} disabled={!!editingId} />
-          <Input label="Shift Name" {...register('name')} error={errors.name?.message} />
+          <Input label="Mã ca" {...register('code')} error={errors.code?.message} disabled={!!editingId} />
+          <Input label="Tên ca" {...register('name')} error={errors.name?.message} />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Start Time" type="time" {...register('startTime')} error={errors.startTime?.message} />
-            <Input label="End Time" type="time" {...register('endTime')} error={errors.endTime?.message} />
+            <Input label="Giờ bắt đầu" type="time" {...register('startTime')} error={errors.startTime?.message} />
+            <Input label="Giờ kết thúc" type="time" {...register('endTime')} error={errors.endTime?.message} />
           </div>
-          <Input label="Grace Period (minutes)" type="number" {...register('gracePeriod')} error={errors.gracePeriod?.message} />
-          
+          <Input label="Thời gian ân hạn (phút)" type="number" {...register('gracePeriod')} error={errors.gracePeriod?.message} />
+
           <div className="flex items-center gap-2 mt-2">
             <input type="checkbox" id="overnight" className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
-              {...register('overnight')} 
+              {...register('overnight')}
             />
-            <label htmlFor="overnight" className="text-sm text-neutral-700">Overnight Shift</label>
+            <label htmlFor="overnight" className="text-sm text-neutral-700">Ca qua đêm</label>
           </div>
-          
+
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-            <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>Cancel</Button>
-            <Button type="submit" isLoading={isSubmitting}>Save</Button>
+            <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>Hủy</Button>
+            <Button type="submit" isLoading={isSubmitting}>Lưu</Button>
           </div>
         </form>
       </Modal>
 
-      {/* Delete Confirmation Modal */}
-      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Delete Shift">
+      {/* Modal xác nhận xóa */}
+      <Modal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} title="Xóa ca làm">
         <div className="mt-4">
-          <p className="text-neutral-600">Are you sure you want to delete this shift? This action cannot be undone.</p>
+          <p className="text-neutral-600">Bạn có chắc chắn muốn xóa ca làm này? Hành động này không thể hoàn tác.</p>
           <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
-            <Button variant="ghost" onClick={() => setIsDeleteModalOpen(false)}>Cancel</Button>
-            <Button variant="danger" onClick={handleDelete}>Delete</Button>
+            <Button variant="ghost" onClick={() => setIsDeleteModalOpen(false)}>Hủy</Button>
+            <Button variant="danger" onClick={handleDelete}>Xóa</Button>
           </div>
         </div>
       </Modal>

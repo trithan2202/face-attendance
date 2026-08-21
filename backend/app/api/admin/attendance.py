@@ -12,8 +12,11 @@ from backend.app.schemas import (
     AttendanceAdjustmentResponse,
     AttendanceDailyResponse,
     AttendanceDetailResponse,
+    AttendanceSegment,
+    OvertimeDecisionRequest,
 )
 from backend.app.services.attendance_adjustment import AttendanceAdjustmentService
+from backend.app.services.overtime_approval import OvertimeApprovalService
 from backend.app.services.attendance_export import (
     XLSX_MEDIA_TYPE,
     build_daily_workbook,
@@ -30,7 +33,7 @@ def _daily_response(daily, employee, shift):
         employee_id=employee.id,
         employee_code=employee.employee_code,
         full_name=employee.full_name,
-        department=employee.department,
+        department=employee.department.name if employee.department else None,
         shift_id=shift.id,
         shift_code=shift.code,
         work_date=daily.work_date,
@@ -40,6 +43,7 @@ def _daily_response(daily, employee, shift):
         late_minutes=daily.late_minutes,
         early_leave_minutes=daily.early_leave_minutes,
         overtime_minutes=daily.overtime_minutes,
+        overtime_status=daily.overtime_status,
         status=daily.status,
         is_late=daily.is_late,
         is_early_leave=daily.is_early_leave,
@@ -47,12 +51,42 @@ def _daily_response(daily, employee, shift):
     )
 
 
+def _segments(events):
+    """Pair consecutive check-in/check-out punches into worked stretches."""
+    segments = []
+    open_check_in = None
+
+    for event in events:
+        if event.event_type == "CHECK_IN":
+            if open_check_in is None:
+                open_check_in = event.recognized_at
+        elif event.event_type == "CHECK_OUT" and open_check_in is not None:
+            minutes = int(
+                (event.recognized_at - open_check_in).total_seconds() // 60
+            )
+            segments.append(
+                AttendanceSegment(
+                    check_in=open_check_in,
+                    check_out=event.recognized_at,
+                    minutes=max(0, minutes),
+                )
+            )
+            open_check_in = None
+
+    if open_check_in is not None:
+        segments.append(
+            AttendanceSegment(check_in=open_check_in, check_out=None, minutes=0)
+        )
+
+    return segments
+
+
 @router.get("", response_model=list[AttendanceDailyResponse])
 def list_attendance(
     date_from: date | None = None,
     date_to: date | None = None,
     employee_id: int | None = None,
-    department: str | None = Query(default=None, max_length=255),
+    department_id: int | None = None,
     attendance_status: str | None = Query(default=None, alias="status", max_length=30),
     admin=Depends(get_current_admin),
     db: Session = Depends(get_db),
@@ -60,7 +94,7 @@ def list_attendance(
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="Ngày bắt đầu phải trước ngày kết thúc")
     rows = AttendanceRepository.list_daily(
-        db, date_from, date_to, employee_id, department, attendance_status
+        db, date_from, date_to, employee_id, department_id, attendance_status
     )
     return [_daily_response(*row) for row in rows]
 
@@ -70,7 +104,7 @@ def export_attendance_excel(
     date_from: date | None = None,
     date_to: date | None = None,
     employee_id: int | None = None,
-    department: str | None = Query(default=None, max_length=255),
+    department_id: int | None = None,
     attendance_status: str | None = Query(default=None, alias="status", max_length=30),
     admin=Depends(get_current_admin),
     db: Session = Depends(get_db),
@@ -78,7 +112,7 @@ def export_attendance_excel(
     if date_from and date_to and date_from > date_to:
         raise HTTPException(status_code=422, detail="Ngày bắt đầu phải trước ngày kết thúc")
     rows = AttendanceRepository.list_daily(
-        db, date_from, date_to, employee_id, department, attendance_status
+        db, date_from, date_to, employee_id, department_id, attendance_status
     )
     output = build_daily_workbook(rows, date_from=date_from, date_to=date_to)
     return StreamingResponse(
@@ -95,7 +129,7 @@ def export_monthly_attendance_excel(
     year: int = Query(ge=2000, le=2100),
     month: int = Query(ge=1, le=12),
     employee_id: int | None = None,
-    department: str | None = Query(default=None, max_length=255),
+    department_id: int | None = None,
     admin=Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
@@ -104,7 +138,7 @@ def export_monthly_attendance_excel(
         year,
         month,
         employee_id=employee_id,
-        department=department,
+        department_id=department_id,
     )
     return StreamingResponse(
         output,
@@ -127,9 +161,11 @@ def attendance_detail(
     if row is None:
         raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi chấm công")
     daily, employee, shift = row
+    events = AttendanceRepository.get_events_for_daily(db, daily, shift)
     return AttendanceDetailResponse(
         daily=_daily_response(daily, employee, shift),
-        events=AttendanceRepository.get_events_for_daily(db, daily, shift),
+        events=events,
+        segments=_segments(events),
     )
 
 
@@ -142,6 +178,24 @@ def adjust_attendance(
 ):
     try:
         result = AttendanceAdjustmentService.adjust(db, daily_id, admin.id, payload)
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Không tìm thấy bản ghi chấm công")
+    daily, employee, shift, adjustment = result
+    return _daily_response(daily, employee, shift)
+
+
+@router.patch("/{daily_id}/overtime", response_model=AttendanceDailyResponse)
+def decide_attendance_overtime(
+    daily_id: int,
+    payload: OvertimeDecisionRequest,
+    admin=Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    try:
+        result = OvertimeApprovalService.decide(db, daily_id, admin.id, payload)
     except ValueError as exc:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(exc))

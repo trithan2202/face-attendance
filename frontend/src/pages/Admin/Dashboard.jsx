@@ -46,14 +46,16 @@ const Dashboard = () => {
       // Mock recent events based on attendance
       const recent = data.slice(0, 10).map(d => ({
         id: d.id,
-        time: d.checkInTime,
+        time: d.checkOutTime || d.checkInTime,
         employeeName: d.employeeName,
+        employeeCode: d.employeeCode,
+        department: d.department,
         type: d.checkOutTime ? 'Check-out' : 'Check-in',
-        status: 'Success'
+        status: 'Thành công'
       }));
       setEvents(recent);
     } catch (err) {
-      setError('Failed to load dashboard data. Please try again.');
+      setError('Không thể tải dữ liệu tổng quan. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
@@ -64,11 +66,17 @@ const Dashboard = () => {
   }, []);
 
   const columns = [
-    { header: 'Time', accessorKey: 'time' },
-    { header: 'Employee', accessorKey: 'employeeName' },
-    { header: 'Event Type', accessorKey: 'type' },
-    { header: 'Status', cell: (row) => (
-      <Badge status={row.status === 'Success' ? 'Active' : 'Absent'}>
+    { header: 'Thời gian', accessorKey: 'time' },
+    { header: 'Nhân viên', cell: (row) => (
+      <div>
+        <div className="font-medium text-neutral-900">{row.employeeName}</div>
+        <div className="text-xs text-neutral-500">{row.employeeCode}</div>
+      </div>
+    )},
+    { header: 'Phòng ban', cell: (row) => row.department || '—' },
+    { header: 'Loại sự kiện', accessorKey: 'type' },
+    { header: 'Trạng thái', cell: (row) => (
+      <Badge status={row.status === 'Thành công' ? 'Active' : 'Absent'}>
         {row.status}
       </Badge>
     )}
@@ -78,27 +86,27 @@ const Dashboard = () => {
     return (
       <div className="p-6 text-center">
         <p className="text-danger-500 mb-4">{error}</p>
-        <button onClick={loadData} className="text-primary-600 font-medium hover:underline">Retry</button>
+        <button onClick={loadData} className="text-primary-600 font-medium hover:underline">Thử lại</button>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-neutral-900">Dashboard</h1>
-      
+      <h1 className="text-2xl font-bold text-neutral-900">Tổng quan</h1>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Check-ins Today" value={stats.checkIn} icon={CheckCircle} colorClass="bg-success-500 text-success-500" isLoading={loading} />
-        <StatCard title="Check-outs Today" value={stats.checkOut} icon={ArrowRightCircle} colorClass="bg-primary-500 text-primary-500" isLoading={loading} />
-        <StatCard title="Late Arrivals" value={stats.late} icon={AlertTriangle} colorClass="bg-warning-500 text-warning-500" isLoading={loading} />
-        <StatCard title="Missing Check-out" value={stats.missing} icon={XCircle} colorClass="bg-danger-500 text-danger-500" isLoading={loading} />
+        <StatCard title="Check-in hôm nay" value={stats.checkIn} icon={CheckCircle} colorClass="bg-success-500 text-success-500" isLoading={loading} />
+        <StatCard title="Check-out hôm nay" value={stats.checkOut} icon={ArrowRightCircle} colorClass="bg-primary-500 text-primary-500" isLoading={loading} />
+        <StatCard title="Đi trễ" value={stats.late} icon={AlertTriangle} colorClass="bg-warning-500 text-warning-500" isLoading={loading} />
+        <StatCard title="Thiếu Check-out" value={stats.missing} icon={XCircle} colorClass="bg-danger-500 text-danger-500" isLoading={loading} />
       </div>
 
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-neutral-200 flex justify-between items-center bg-white">
-          <h2 className="text-lg font-bold text-neutral-900">Recent Events</h2>
+          <h2 className="text-lg font-bold text-neutral-900">Sự kiện gần đây</h2>
           <Link to="/admin/attendance" className="text-sm font-medium text-primary-600 hover:text-primary-700 flex items-center gap-1">
-            View All <ChevronRight className="w-4 h-4" />
+            Xem tất cả <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
         <Table columns={columns} data={events} isLoading={loading} className="border-0 rounded-none shadow-none" />
