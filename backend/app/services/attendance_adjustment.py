@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from attendance.attendance_calculator import AttendanceCalculator
 from backend.app.core.config import settings
 from backend.app.repositories.attendance_repository import AttendanceRepository
+from backend.app.services.settings_service import SettingsService
 from backend.app.core.logging import log_extra
 
 
@@ -62,7 +63,7 @@ class AttendanceAdjustmentService:
         ):
             raise ValueError("Thời gian check-out phải sau check-in")
 
-        AttendanceAdjustmentService._recalculate(daily, shift)
+        AttendanceAdjustmentService._recalculate(db, daily, shift)
         if "status" in changes:
             daily.status = changes["status"]
         after = snapshot(daily)
@@ -85,5 +86,9 @@ class AttendanceAdjustmentService:
         return daily, employee, shift, adjustment
 
     @staticmethod
-    def _recalculate(daily, shift):
-        AttendanceCalculator.recalculate(daily, shift)
+    def _recalculate(db, daily, shift):
+        # Sửa giờ tay phải dùng đúng ngưỡng tăng ca mà kiosk đang dùng, nếu
+        # không cùng một ngày sẽ ra hai kết quả khác nhau tùy đường ghi nhận.
+        AttendanceCalculator.recalculate(
+            daily, shift, SettingsService.get_int(db, "OVERTIME_MIN_MINUTES")
+        )

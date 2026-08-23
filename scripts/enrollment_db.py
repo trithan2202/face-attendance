@@ -13,7 +13,7 @@ from face_engine import (
 )
 from backend.app.repositories.shift_repository import ShiftRepository
 
-TARGET_SAMPLES = 10
+TARGET_SAMPLES = 5
 CAPTURE_INTERVAL = 0.7
 
 

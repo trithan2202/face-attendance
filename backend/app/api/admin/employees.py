@@ -9,6 +9,7 @@ from backend.app.repositories.department_repository import DepartmentRepository
 from backend.app.repositories.employee_repository import EmployeeRepository
 from backend.app.repositories.shift_repository import ShiftRepository
 from backend.app.schemas import EmployeeCreate, EmployeeResponse, EmployeeUpdate
+from backend.app.services.enrollment import TARGET_SAMPLES
 from backend.app.core.logging import log_extra
 
 
@@ -26,7 +27,7 @@ def _not_found():
 
 def _response(db, employee):
     sample_count, has_centroid = EmployeeRepository.enrollment_stats(db, employee.id)
-    if sample_count == 10 and has_centroid:
+    if sample_count >= TARGET_SAMPLES and has_centroid:
         enrollment_status = "COMPLETED"
     elif sample_count > 0 or has_centroid:
         enrollment_status = "INCOMPLETE"
@@ -116,7 +117,7 @@ def update_employee(
     if duplicate_id is not None and duplicate_id.id != employee.id:
         raise HTTPException(status_code=409, detail="Số CCCD đã tồn tại")
     sample_count, has_centroid = EmployeeRepository.enrollment_stats(db, employee.id)
-    if payload.status == "ACTIVE" and not (sample_count == 10 and has_centroid):
+    if payload.status == "ACTIVE" and not (sample_count >= TARGET_SAMPLES and has_centroid):
         raise HTTPException(
             status_code=409,
             detail="Chỉ có thể kích hoạt sau khi đăng ký đủ khuôn mặt",

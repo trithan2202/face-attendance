@@ -53,7 +53,7 @@ class Settings:
             os.getenv("RECOGNITION_SESSION_TIMEOUT_SECONDS", "30")
         )
         self.RECOGNITION_HOLD_SECONDS = float(
-            os.getenv("RECOGNITION_HOLD_SECONDS", "3")
+            os.getenv("RECOGNITION_HOLD_SECONDS", "1")
         )
         self.RECOGNITION_MAX_FRAME_GAP_SECONDS = float(
             os.getenv("RECOGNITION_MAX_FRAME_GAP_SECONDS", "1")
@@ -62,7 +62,22 @@ class Settings:
         self.MIN_PUNCH_INTERVAL_SECONDS = int(
             os.getenv("MIN_PUNCH_INTERVAL_SECONDS", "60")
         )
+        self.OVERTIME_MIN_MINUTES = int(
+            os.getenv("OVERTIME_MIN_MINUTES", "30")
+        )
         self.HALF_DAY_RATIO = float(os.getenv("HALF_DAY_RATIO", "0.75"))
+        self.FACE_ENGINE_WARMUP = _get_bool("FACE_ENGINE_WARMUP", True)
+        self.IMAGE_PREPROCESS_ENABLED = _get_bool("IMAGE_PREPROCESS_ENABLED", True)
+        self.IMAGE_CLAHE_CLIP_LIMIT = float(
+            os.getenv("IMAGE_CLAHE_CLIP_LIMIT", "2.0")
+        )
+        self.IMAGE_CLAHE_TILE_GRID = int(os.getenv("IMAGE_CLAHE_TILE_GRID", "8"))
+        self.IMAGE_TARGET_BRIGHTNESS = float(
+            os.getenv("IMAGE_TARGET_BRIGHTNESS", "125")
+        )
+        self.IMAGE_BRIGHTNESS_TOLERANCE = float(
+            os.getenv("IMAGE_BRIGHTNESS_TOLERANCE", "25")
+        )
         self.ENROLLMENT_SESSION_TIMEOUT_SECONDS = int(
             os.getenv("ENROLLMENT_SESSION_TIMEOUT_SECONDS", "180")
         )

@@ -11,14 +11,9 @@ from attendance.attendance_service import AttendanceService
 from backend.app.core.config import settings
 from backend.app.core.logging import log_extra
 from backend.app.repositories.face_repository import FaceRepository
+from backend.app.services.face_engine_provider import get_face_engine
 from backend.app.services.settings_service import SettingsService
 from face_engine.matcher import FaceMatcher
-
-
-def create_face_engine():
-    from face_engine.engine import FaceEngine
-
-    return FaceEngine()
 
 
 logger = logging.getLogger("face_attendance.recognition")
@@ -41,7 +36,7 @@ class RecognitionSession:
     known_faces: dict
     metadata: dict
     state: str = "RECOGNIZING"
-    message: str = "Giữ khuôn mặt trong khung hình trong 3 giây"
+    message: str = "Giữ khuôn mặt trong khung hình"
     stable_since: float | None = None
     last_matched_at: float | None = None
     stable_seconds: float = 0.0
@@ -54,7 +49,7 @@ class RecognitionSession:
 
 class RecognitionService:
     def __init__(self, engine_factory=None, clock=None):
-        self.engine_factory = engine_factory or create_face_engine
+        self.engine_factory = engine_factory or get_face_engine
         self._engine = None
         self._sessions = {}
         self._lock = threading.RLock()
@@ -63,6 +58,7 @@ class RecognitionService:
         self.attendance = AttendanceService(
             settings.MIN_CHECKOUT_MINUTES,
             settings.MIN_PUNCH_INTERVAL_SECONDS,
+            settings.OVERTIME_MIN_MINUTES,
         )
         self.hold_seconds = settings.RECOGNITION_HOLD_SECONDS
 
@@ -215,6 +211,9 @@ class RecognitionService:
         )
         self.attendance.min_punch_interval_seconds = SettingsService.get_int(
             db, "MIN_PUNCH_INTERVAL_SECONDS"
+        )
+        self.attendance.overtime_min_minutes = SettingsService.get_int(
+            db, "OVERTIME_MIN_MINUTES"
         )
 
     def _detect(self, frame):

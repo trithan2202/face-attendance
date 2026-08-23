@@ -1,6 +1,8 @@
 import logging
 import secrets
+import threading
 import time
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -21,10 +23,24 @@ from backend.app.api.kiosk import router as kiosk_router
 from backend.app.api.public import router as public_router
 from backend.app.core.config import settings
 from backend.app.core.logging import configure_logging, log_extra, request_id_context
+from backend.app.services.face_engine_provider import warm_up as warm_up_face_engine
 
 
 configure_logging(settings.LOG_LEVEL)
 logger = logging.getLogger("face_attendance.api")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Nạp mô hình ở luồng nền: API sẵn sàng phục vụ ngay, còn mô hình nạp
+    # xong trước khi có người đứng vào kiosk.
+    if settings.FACE_ENGINE_WARMUP:
+        threading.Thread(
+            target=warm_up_face_engine,
+            name="face-engine-warmup",
+            daemon=True,
+        ).start()
+    yield
 
 
 app = FastAPI(
@@ -32,6 +48,7 @@ app = FastAPI(
     version="0.1.0",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

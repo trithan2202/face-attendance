@@ -328,7 +328,7 @@ const Employees = () => {
             <strong>
               {enrollment?.state === 'LIVENESS'
                 ? 'Kiểm tra liveness'
-                : `${enrollment?.samples_collected || 0}/${enrollment?.target_samples || 10}`}
+                : `${enrollment?.samples_collected || 0}/${enrollment?.target_samples || 5}`}
             </strong>
           </div>
           <div className="h-2 bg-neutral-200 rounded overflow-hidden">
@@ -337,7 +337,7 @@ const Employees = () => {
               style={{
                 width: enrollment?.state === 'LIVENESS'
                   ? `${Math.min(100, ((enrollment?.liveness_progress || 0) / (enrollment?.liveness_required_progress || 3)) * 100)}%`
-                  : `${((enrollment?.samples_collected || 0) / 10) * 100}%`,
+                  : `${((enrollment?.samples_collected || 0) / (enrollment?.target_samples || 5)) * 100}%`,
               }}
             />
           </div>

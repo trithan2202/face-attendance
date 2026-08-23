@@ -11,19 +11,14 @@ from backend.app.core.config import settings
 from backend.app.core.logging import log_extra
 from backend.app.repositories.employee_repository import EmployeeRepository
 from backend.app.repositories.face_repository import FaceRepository
+from backend.app.services.face_engine_provider import get_face_engine
 from backend.app.services.liveness import liveness_service
 from face_engine.quality import FaceQualityChecker
 from face_engine.recognizer import FaceRecognizer
 
 
-TARGET_SAMPLES = 10
+TARGET_SAMPLES = 5
 logger = logging.getLogger("face_attendance.enrollment")
-
-
-def create_face_engine():
-    from face_engine.engine import FaceEngine
-
-    return FaceEngine()
 
 
 @dataclass
@@ -123,11 +118,12 @@ class EnrollmentSessionStore:
 class EnrollmentService:
     def __init__(self, store=None, engine_factory=None, liveness=None):
         self.store = store or EnrollmentSessionStore()
-        self.engine_factory = engine_factory or create_face_engine
+        self.engine_factory = engine_factory or get_face_engine
         self._engine = None
         self._engine_lock = threading.Lock()
         self.quality_checker = FaceQualityChecker()
         self.liveness = liveness or liveness_service
+        self._preprocess_stats = {}
 
     def start(self, employee_id: int):
         proof = self.liveness.start()
@@ -219,6 +215,10 @@ class EnrollmentService:
                     target_samples=TARGET_SAMPLES,
                     quality_score=round(quality_score, 2),
                     detection_score=round(float(face.det_score), 4),
+                    brightness_before=self._preprocess_stats.get(
+                        "brightness_before"
+                    ),
+                    brightness_after=self._preprocess_stats.get("brightness_after"),
                 ),
             )
 
@@ -244,7 +244,11 @@ class EnrollmentService:
         with self._engine_lock:
             if self._engine is None:
                 self._engine = self.engine_factory()
-            return self._engine.detect(frame)
+            faces = self._engine.detect(frame)
+            self._preprocess_stats = getattr(
+                self._engine, "last_preprocess_stats", {}
+            )
+            return faces
 
     @staticmethod
     def _blur_score(frame, face):

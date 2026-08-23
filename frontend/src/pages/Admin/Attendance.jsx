@@ -14,6 +14,7 @@ import Modal from '../../components/ui/Modal';
 import Textarea from '../../components/ui/Textarea';
 import Skeleton from '../../components/ui/Skeleton';
 import { statusLabelVi } from '../../utils/statusLabels';
+import { formatDuration } from '../../utils/duration';
 
 const updateSchema = z.object({
   checkInTime: z.string().optional(),
@@ -203,7 +204,7 @@ const Attendance = () => {
     { header: 'Tăng ca', cell: (row) => (
       row.overtimeMinutes > 0 ? (
         <div className="flex flex-col gap-1 items-start">
-          <span className="text-sm font-medium text-neutral-900">{row.overtimeMinutes} phút</span>
+          <span className="text-sm font-medium text-neutral-900">{formatDuration(row.overtimeMinutes)}</span>
           <Badge status={row.overtimeStatus}>{statusLabelVi(row.overtimeStatus)}</Badge>
         </div>
       ) : <span className="text-neutral-400">—</span>
@@ -399,7 +400,7 @@ const Attendance = () => {
               <p className="text-sm font-medium">Nhân viên: {overtimeRecord.employeeName} ({overtimeRecord.employeeCode})</p>
               <p className="text-sm text-neutral-500">Ngày: {overtimeRecord.date}</p>
               <p className="text-sm text-neutral-500">
-                Check-out: {overtimeRecord.checkOutTime || '—'} · Tăng ca: <strong>{overtimeRecord.overtimeMinutes} phút</strong>
+                Check-out: {overtimeRecord.checkOutTime || '—'} · Tăng ca: <strong>{formatDuration(overtimeRecord.overtimeMinutes)}</strong>
               </p>
             </div>
             <Textarea

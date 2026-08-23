@@ -3,6 +3,7 @@ __all__ = [
     "FaceMatcher",
     "FaceQualityChecker",
     "FaceRecognizer",
+    "FramePreprocessor",
 ]
 
 
@@ -23,4 +24,8 @@ def __getattr__(name):
         from .recognizer import FaceRecognizer
 
         return FaceRecognizer
+    if name == "FramePreprocessor":
+        from .preprocess import FramePreprocessor
+
+        return FramePreprocessor
     raise AttributeError(name)

@@ -6,6 +6,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
+from attendance.attendance_calculator import AttendanceCalculator
 from backend.app.repositories.attendance_repository import AttendanceRepository
 from backend.app.services.settings_service import SettingsService
 
@@ -178,7 +179,7 @@ def build_daily_workbook(rows, date_from=None, date_to=None):
             daily.worked_minutes,
             daily.late_minutes,
             daily.early_leave_minutes,
-            daily.overtime_minutes,
+            AttendanceCalculator.format_duration(daily.overtime_minutes),
             _status_label(daily.status),
             _overtime_status_label(daily.overtime_status),
         ]
@@ -376,8 +377,10 @@ def _add_overtime_sheet(workbook, attendance_rows):
     overtime_hours = {}
     for daily, employee, _shift in overtime_rows:
         employee_data.setdefault(employee.id, employee)
-        overtime_hours[(employee.id, daily.work_date)] = round(
-            daily.overtime_minutes / 60, 2
+        # Lưu theo đơn vị "phần của một ngày" - đây là cách Excel biểu diễn thời
+        # gian, nhờ vậy ô vừa hiện hh:mm vừa cộng được bằng SUM.
+        overtime_hours[(employee.id, daily.work_date)] = (
+            daily.overtime_minutes / 1440
         )
     employees = sorted(
         employee_data.values(),
@@ -468,7 +471,7 @@ def _add_overtime_sheet(workbook, attendance_rows):
                     column=column,
                     value=overtime_hours.get((employee.id, overtime_date)),
                 )
-                cell.number_format = "0.##"
+                cell.number_format = "[h]:mm"
                 cell.font = Font(name="Times New Roman", size=11)
                 cell.alignment = Alignment(horizontal="right", vertical="center")
                 cell.border = GRID_BORDER
@@ -477,7 +480,7 @@ def _add_overtime_sheet(workbook, attendance_rows):
             last_letter = get_column_letter(last_day_column)
             total_cell = sheet.cell(row=row_index, column=total_column)
             total_cell.value = f"=SUM({first_letter}{row_index}:{last_letter}{row_index})"
-            total_cell.number_format = "0.##"
+            total_cell.number_format = "[h]:mm"
             total_cell.font = Font(name="Times New Roman", bold=True, size=11)
             total_cell.alignment = Alignment(horizontal="center", vertical="center")
             total_cell.border = GRID_BORDER

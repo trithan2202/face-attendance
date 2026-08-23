@@ -19,7 +19,7 @@ from face_engine.quality import FaceQualityChecker
 DATASET_DIR = os.path.join(PROJECT_ROOT, "dataset")
 
 CAMERA_INDEX = 0
-TARGET_SAMPLES = 10
+TARGET_SAMPLES = 5
 CAPTURE_INTERVAL = 0.7
 
 

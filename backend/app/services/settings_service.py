@@ -51,6 +51,12 @@ EDITABLE_SETTINGS = {
             0, 3600,
         ),
         SettingDefinition(
+            "OVERTIME_MIN_MINUTES", "INT", "Chấm công",
+            "Ngưỡng tăng ca tối thiểu (phút)",
+            "Ra trễ dưới ngưỡng này so với giờ kết thúc ca thì không tính tăng ca.",
+            0, 480,
+        ),
+        SettingDefinition(
             "HALF_DAY_RATIO", "FLOAT", "Báo cáo",
             "Tỷ lệ tính nửa công",
             "Làm dưới tỷ lệ này so với giờ ca sẽ được tính nửa công (0.5HC).",

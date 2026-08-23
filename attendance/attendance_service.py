@@ -26,13 +26,17 @@ class AttendanceService:
     def __init__(
         self,
         min_checkout_minutes=60,
-        min_punch_interval_seconds=60
+        min_punch_interval_seconds=60,
+        overtime_min_minutes=0
     ):
         self.min_checkout_minutes = (
             min_checkout_minutes
         )
         self.min_punch_interval_seconds = (
             min_punch_interval_seconds
+        )
+        self.overtime_min_minutes = (
+            overtime_min_minutes
         )
 
     def process(
@@ -238,8 +242,7 @@ class AttendanceService:
             "daily_id": daily.id
         }
 
-    @staticmethod
-    def _sync_daily(daily, events, shift):
+    def _sync_daily(self, daily, events, shift):
         """Rebuild the daily aggregate from every punch of the day.
 
         `first_check_in` and `last_check_out` stay the outer bounds of the day,
@@ -259,4 +262,8 @@ class AttendanceService:
         daily.first_check_in = min(check_ins) if check_ins else None
         daily.last_check_out = max(check_outs) if check_outs else None
 
-        AttendanceCalculator.recalculate(daily, shift)
+        AttendanceCalculator.recalculate(
+            daily,
+            shift,
+            self.overtime_min_minutes
+        )

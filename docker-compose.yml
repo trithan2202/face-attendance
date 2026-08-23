@@ -50,6 +50,10 @@ services:
       WORKER_STATUS_FILE: /app/runtime/worker-status.json
     ports:
       - "8000:8000"
+    volumes:
+      # Giữ bộ mô hình buffalo_l qua các lần build lại. Không có volume này
+      # thì mỗi lần "docker compose up --build" sẽ tải lại ~280 MB.
+      - insightface_models:/root/.insightface
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,3 +72,4 @@ services:
 
 volumes:
   postgres_data:
+  insightface_models:

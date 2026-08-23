@@ -1,5 +1,6 @@
 from insightface.app import FaceAnalysis
 
+from face_engine.preprocess import FramePreprocessor
 from face_engine.recognizer import FaceRecognizer
 
 
@@ -8,10 +9,17 @@ class FaceEngine:
         self,
         model_name="buffalo_l",
         providers=None,
-        det_size=(640, 640)
+        det_size=(640, 640),
+        preprocessor=None
     ):
         if providers is None:
             providers = ["CPUExecutionProvider"]
+
+        # Tiền xử lý đặt ở đây để cả luồng nhận diện lẫn luồng đăng ký khuôn
+        # mặt dùng chung một cách chuẩn hóa ảnh, tránh lệch phân bố dữ liệu
+        # giữa embedding lúc đăng ký và embedding lúc chấm công.
+        self.preprocessor = preprocessor or FramePreprocessor()
+        self.last_preprocess_stats = {}
 
         self.app = FaceAnalysis(
             name=model_name,
@@ -24,7 +32,10 @@ class FaceEngine:
         )
 
     def detect(self, image):
-        return self.app.get(image)
+        prepared, stats = self.preprocessor.enhance(image)
+        self.last_preprocess_stats = stats
+
+        return self.app.get(prepared)
 
     def get_largest_face(self, image):
         faces = self.detect(image)

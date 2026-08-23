@@ -4,6 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { AlertCircle, CalendarSearch, IdCard, CreditCard, ArrowLeft } from 'lucide-react';
 import { api } from '../../services/api';
+import { formatDuration } from '../../utils/duration';
 import Input from '../../components/ui/Input';
 import Button from '../../components/ui/Button';
 import Badge from '../../components/ui/Badge';
@@ -116,7 +117,7 @@ const Lookup = () => {
                 <StatCard label="Ngày nghỉ phép" value={result.summary.leaveDays} />
                 <StatCard label="Số lần đi trễ" value={result.summary.lateDays} />
                 <StatCard label="Tổng giờ làm" value={`${Math.floor(result.summary.totalWorkedMinutes / 60)}h`} />
-                <StatCard label="Tăng ca đã duyệt" value={`${Math.floor(result.summary.approvedOvertimeMinutes / 60)}h`} />
+                <StatCard label="Tăng ca đã duyệt" value={formatDuration(result.summary.approvedOvertimeMinutes)} />
               </div>
             </div>
 
