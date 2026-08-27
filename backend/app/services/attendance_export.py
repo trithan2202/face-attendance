@@ -89,6 +89,15 @@ def _status_label(status):
     }.get(status, status)
 
 
+def _overtime_hours(minutes):
+    """Quy giờ tăng ca về số giờ tròn.
+
+    Phần lẻ dưới 30 phút thì làm tròn xuống, từ 30 phút trở lên làm tròn lên:
+    1:15 thành 1 giờ, 1:45 thành 2 giờ.
+    """
+    return (max(0, int(minutes or 0)) + 30) // 60
+
+
 def _overtime_status_label(status):
     return {
         "NONE": "",
@@ -96,6 +105,56 @@ def _overtime_status_label(status):
         "APPROVED": "Đã duyệt",
         "REJECTED": "Từ chối",
     }.get(status, status)
+
+
+MONTH_ABBR = (
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+)
+
+# Ba dòng tiêu đề nằm trên cùng của hai sheet báo cáo tháng: tên bảng, kỳ báo
+# cáo và ngày xuất. Bảng dữ liệu vì vậy bắt đầu từ dòng thứ tư.
+REPORT_HEADER_ROWS = 3
+
+
+def _add_report_header(sheet, year, month):
+    """Tiêu đề "BẢNG CHẤM CÔNG AUG.26" cùng kỳ báo cáo và ngày xuất."""
+    last_day = calendar.monthrange(year, month)[1]
+
+    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4)
+    title = sheet.cell(
+        row=1,
+        column=1,
+        value=f"BẢNG CHẤM CÔNG {MONTH_ABBR[month - 1]}.{year % 100:02d}",
+    )
+    title.font = Font(name="Times New Roman", bold=True, size=14)
+    title.alignment = Alignment(horizontal="left", vertical="center")
+
+    # Nhãn nằm ở A:B đã gộp, ngày nằm ở cột C và E - đây là những cột đủ rộng
+    # trên cả hai sheet; cột ngày công chỉ rộng hơn 4 nên đặt ngày vào đó sẽ
+    # hiện thành "#####".
+    info_rows = (
+        (2, "Từ ngày:", date(year, month, 1), "Đến ngày:", date(year, month, last_day)),
+        (3, "Ngày xuất BC:", date.today(), None, None),
+    )
+    for row, label, value, second_label, second_value in info_rows:
+        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        for column, content in (
+            (1, label), (3, value), (4, second_label), (5, second_value)
+        ):
+            if content is None:
+                continue
+            cell = sheet.cell(row=row, column=column, value=content)
+            cell.font = Font(
+                name="Times New Roman", size=11, bold=column in {1, 4}
+            )
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            if isinstance(content, date):
+                cell.number_format = "dd/mm/yyyy"
+
+    sheet.row_dimensions[1].height = 22
+    sheet.row_dimensions[2].height = 18
+    sheet.row_dimensions[3].height = 18
 
 
 def _new_workbook(title):
@@ -222,7 +281,12 @@ def build_monthly_workbook(
     workbook = _new_workbook(f"Báo cáo công tháng {month}/{year}")
     sheet = workbook.create_sheet(f"Thang {month:02d}-{year}")
     sheet.sheet_view.showGridLines = False
-    sheet.freeze_panes = "F3"
+    _add_report_header(sheet, year, month)
+
+    # Bảng nằm dưới khối tiêu đề: hai dòng tiêu đề cột rồi mới tới nhân viên.
+    top = REPORT_HEADER_ROWS
+    head_row, day_row, first_data_row = top + 1, top + 2, top + 3
+    sheet.freeze_panes = f"F{first_data_row}"
 
     last_day = calendar.monthrange(year, month)[1]
     employee_rows = list(employees)
@@ -233,22 +297,29 @@ def build_monthly_workbook(
 
     headers = ["STT", "MÃ NHÂN VIÊN", "TÊN NHÂN VIÊN", "PHÒNG BAN", "CA LÀM"]
     for column, value in enumerate(headers, start=1):
-        sheet.merge_cells(start_row=1, start_column=column, end_row=2, end_column=column)
-        cell = sheet.cell(row=1, column=column, value=value)
+        sheet.merge_cells(
+            start_row=head_row, start_column=column,
+            end_row=day_row, end_column=column,
+        )
+        cell = sheet.cell(row=head_row, column=column, value=value)
         cell.fill = HEADER_FILL
         cell.font = Font(name="Times New Roman", bold=True, size=11)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         cell.border = GRID_BORDER
 
-    sheet.merge_cells(start_row=1, start_column=6, end_row=1, end_column=36)
-    month_cell = sheet.cell(row=1, column=6, value=f"THÁNG {month}/{year}")
+    sheet.merge_cells(
+        start_row=head_row, start_column=6, end_row=head_row, end_column=36
+    )
+    month_cell = sheet.cell(row=head_row, column=6, value=f"THÁNG {month}/{year}")
     month_cell.fill = HEADER_FILL
     month_cell.font = Font(name="Times New Roman", bold=True, size=11)
     month_cell.alignment = Alignment(horizontal="center", vertical="center")
     month_cell.border = GRID_BORDER
 
-    sheet.merge_cells(start_row=1, start_column=37, end_row=2, end_column=37)
-    total_header = sheet.cell(row=1, column=37, value="TỔNG NGÀY\nCÔNG")
+    sheet.merge_cells(
+        start_row=head_row, start_column=37, end_row=day_row, end_column=37
+    )
+    total_header = sheet.cell(row=head_row, column=37, value="TỔNG NGÀY\nCÔNG")
     total_header.fill = HEADER_FILL
     total_header.font = Font(name="Times New Roman", bold=True, size=10)
     total_header.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -256,7 +327,7 @@ def build_monthly_workbook(
 
     for day in range(1, 32):
         column = day + 5
-        cell = sheet.cell(row=2, column=column, value=day)
+        cell = sheet.cell(row=day_row, column=column, value=day)
         valid_day = day <= last_day
         is_sunday = valid_day and date(year, month, day).weekday() == 6
         cell.fill = (
@@ -271,9 +342,9 @@ def build_monthly_workbook(
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = GRID_BORDER
 
-    for row_index, (employee, shift) in enumerate(employee_rows, start=3):
+    for row_index, (employee, shift) in enumerate(employee_rows, start=first_data_row):
         info_values = [
-            row_index - 2,
+            row_index - first_data_row + 1,
             _safe_text(employee.employee_code),
             _safe_text(employee.full_name),
             _department_name(employee),
@@ -328,15 +399,15 @@ def build_monthly_workbook(
         total_cell.border = GRID_BORDER
         sheet.row_dimensions[row_index].height = 22
 
-    sheet.row_dimensions[1].height = 25
-    sheet.row_dimensions[2].height = 22
+    sheet.row_dimensions[head_row].height = 25
+    sheet.row_dimensions[day_row].height = 22
     widths = {1: 6, 2: 16, 3: 28, 4: 18, 5: 13, 37: 13}
     for column, width in widths.items():
         sheet.column_dimensions[get_column_letter(column)].width = width
     for column in range(6, 37):
         sheet.column_dimensions[get_column_letter(column)].width = 4.3
 
-    legend_row = max(5, len(employee_rows) + 5)
+    legend_row = max(5, len(employee_rows) + 5) + top
     sheet.merge_cells(start_row=legend_row, start_column=1, end_row=legend_row, end_column=12)
     legend = sheet.cell(
         row=legend_row,
@@ -354,16 +425,20 @@ def build_monthly_workbook(
     sheet.page_setup.fitToWidth = 1
     sheet.page_setup.fitToHeight = 0
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.print_title_rows = "1:2"
-    sheet.print_area = f"A1:AK{max(legend_row, len(employee_rows) + 2)}"
-    _add_overtime_sheet(workbook, attendance_rows)
+    sheet.print_title_rows = f"1:{day_row}"
+    sheet.print_area = f"A1:AK{max(legend_row, len(employee_rows) + day_row)}"
+    _add_overtime_sheet(workbook, attendance_rows, year, month)
     return _save(workbook)
 
 
-def _add_overtime_sheet(workbook, attendance_rows):
+def _add_overtime_sheet(workbook, attendance_rows, year, month):
     sheet = workbook.create_sheet("Công OT")
     sheet.sheet_view.showGridLines = False
-    sheet.freeze_panes = "E3"
+    _add_report_header(sheet, year, month)
+
+    top = REPORT_HEADER_ROWS
+    head_row, day_row, first_data_row = top + 1, top + 2, top + 3
+    sheet.freeze_panes = f"E{first_data_row}"
 
     # Only overtime an admin has signed off on is billable, so the sheet is the
     # approved set rather than everything the clock produced.
@@ -377,10 +452,10 @@ def _add_overtime_sheet(workbook, attendance_rows):
     overtime_hours = {}
     for daily, employee, _shift in overtime_rows:
         employee_data.setdefault(employee.id, employee)
-        # Lưu theo đơn vị "phần của một ngày" - đây là cách Excel biểu diễn thời
-        # gian, nhờ vậy ô vừa hiện hh:mm vừa cộng được bằng SUM.
-        overtime_hours[(employee.id, daily.work_date)] = (
-            daily.overtime_minutes / 1440
+        # Bảng OT chỉ tính theo giờ tròn nên lưu thẳng số giờ đã làm tròn, ô
+        # vừa hiện đúng con số vừa cộng được bằng SUM.
+        overtime_hours[(employee.id, daily.work_date)] = _overtime_hours(
+            daily.overtime_minutes
         )
     employees = sorted(
         employee_data.values(),
@@ -396,12 +471,12 @@ def _add_overtime_sheet(workbook, attendance_rows):
     static_headers = ["STT", "Mã NV", "TÊN NHÂN VIÊN", "PHÒNG BAN"]
     for column, value in enumerate(static_headers, start=1):
         sheet.merge_cells(
-            start_row=1,
+            start_row=head_row,
             start_column=column,
-            end_row=2,
+            end_row=day_row,
             end_column=column,
         )
-        cell = sheet.cell(row=1, column=column, value=value)
+        cell = sheet.cell(row=head_row, column=column, value=value)
         cell.fill = OT_INFO_FILL
         cell.font = Font(name="Times New Roman", bold=True, size=11)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -409,12 +484,12 @@ def _add_overtime_sheet(workbook, attendance_rows):
 
     if last_day_column > first_day_column:
         sheet.merge_cells(
-            start_row=1,
+            start_row=head_row,
             start_column=first_day_column,
-            end_row=1,
+            end_row=head_row,
             end_column=last_day_column,
         )
-    date_group = sheet.cell(row=1, column=first_day_column, value="Ngày (tiếng)")
+    date_group = sheet.cell(row=head_row, column=first_day_column, value="Ngày (tiếng)")
     date_group.fill = OT_DATE_GROUP_FILL
     date_group.font = Font(name="Times New Roman", bold=True, size=11)
     date_group.alignment = Alignment(horizontal="center", vertical="center")
@@ -423,34 +498,34 @@ def _add_overtime_sheet(workbook, attendance_rows):
     for offset in range(day_count):
         column = first_day_column + offset
         value = overtime_dates[offset] if offset < len(overtime_dates) else "-"
-        cell = sheet.cell(row=2, column=column, value=value)
+        cell = sheet.cell(row=day_row, column=column, value=value)
         cell.fill = OT_DATE_FILL
         cell.font = Font(name="Times New Roman", bold=True, size=10)
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = GRID_BORDER
         if isinstance(value, date):
-            cell.number_format = "m/d/yyyy"
+            cell.number_format = "dd/mm"
 
     for column, value, fill in (
         (total_column, "Total", OT_TOTAL_FILL),
         (note_column, "Note", OT_NOTE_FILL),
     ):
         sheet.merge_cells(
-            start_row=1,
+            start_row=head_row,
             start_column=column,
-            end_row=2,
+            end_row=day_row,
             end_column=column,
         )
-        cell = sheet.cell(row=1, column=column, value=value)
+        cell = sheet.cell(row=head_row, column=column, value=value)
         cell.fill = fill
         cell.font = Font(name="Times New Roman", bold=True, size=11)
         cell.alignment = Alignment(horizontal="center", vertical="center")
         cell.border = GRID_BORDER
 
     if employees:
-        for row_index, employee in enumerate(employees, start=3):
+        for row_index, employee in enumerate(employees, start=first_data_row):
             info_values = [
-                row_index - 2,
+                row_index - first_data_row + 1,
                 _safe_text(employee.employee_code),
                 _safe_text(employee.full_name),
                 _department_name(employee),
@@ -471,16 +546,17 @@ def _add_overtime_sheet(workbook, attendance_rows):
                     column=column,
                     value=overtime_hours.get((employee.id, overtime_date)),
                 )
-                cell.number_format = "[h]:mm"
+                cell.number_format = "0"
                 cell.font = Font(name="Times New Roman", size=11)
-                cell.alignment = Alignment(horizontal="right", vertical="center")
+                # Canh giữa cho thẳng cột với tiêu đề ngày phía trên.
+                cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = GRID_BORDER
 
             first_letter = get_column_letter(first_day_column)
             last_letter = get_column_letter(last_day_column)
             total_cell = sheet.cell(row=row_index, column=total_column)
             total_cell.value = f"=SUM({first_letter}{row_index}:{last_letter}{row_index})"
-            total_cell.number_format = "[h]:mm"
+            total_cell.number_format = "0"
             total_cell.font = Font(name="Times New Roman", bold=True, size=11)
             total_cell.alignment = Alignment(horizontal="center", vertical="center")
             total_cell.border = GRID_BORDER
@@ -489,34 +565,38 @@ def _add_overtime_sheet(workbook, attendance_rows):
             note_cell.font = Font(name="Times New Roman", size=11)
             note_cell.border = GRID_BORDER
             sheet.row_dimensions[row_index].height = 23
-        last_row = len(employees) + 2
+        last_row = len(employees) + day_row
     else:
-        last_row = 3
+        last_row = first_data_row
         sheet.merge_cells(
-            start_row=3,
+            start_row=first_data_row,
             start_column=1,
-            end_row=3,
+            end_row=first_data_row,
             end_column=note_column,
         )
-        empty_cell = sheet.cell(row=3, column=1, value="Không có dữ liệu tăng ca trong tháng")
+        empty_cell = sheet.cell(
+            row=first_data_row, column=1, value="Không có dữ liệu tăng ca trong tháng"
+        )
         empty_cell.font = Font(name="Times New Roman", italic=True, size=11, color="666666")
         empty_cell.alignment = Alignment(horizontal="center", vertical="center")
         empty_cell.border = GRID_BORDER
-        sheet.row_dimensions[3].height = 28
+        sheet.row_dimensions[first_data_row].height = 28
 
-    sheet.row_dimensions[1].height = 30
-    sheet.row_dimensions[2].height = 24
+    sheet.row_dimensions[head_row].height = 30
+    sheet.row_dimensions[day_row].height = 24
     widths = {1: 7, 2: 18, 3: 32, 4: 22, total_column: 14, note_column: 18}
     for column, width in widths.items():
         sheet.column_dimensions[get_column_letter(column)].width = width
+    # Cột ngày chỉ cần đủ cho tiêu đề "dd/mm" và số giờ tăng ca bên dưới; để
+    # rộng hơn thì bảng bị kéo dài vô ích khi tháng có nhiều ngày OT.
     for column in range(first_day_column, last_day_column + 1):
-        sheet.column_dimensions[get_column_letter(column)].width = 15
+        sheet.column_dimensions[get_column_letter(column)].width = 8
 
     sheet.page_setup.orientation = "landscape"
     sheet.page_setup.fitToWidth = 1
     sheet.page_setup.fitToHeight = 0
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.print_title_rows = "1:2"
+    sheet.print_title_rows = f"1:{day_row}"
     sheet.print_area = f"A1:{get_column_letter(note_column)}{last_row}"
 
 
