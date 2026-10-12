@@ -13,9 +13,11 @@ from backend.app.schemas import (
     AttendanceDailyResponse,
     AttendanceDetailResponse,
     AttendanceSegment,
+    LateTrendResponse,
     OvertimeDecisionRequest,
 )
 from backend.app.services.attendance_adjustment import AttendanceAdjustmentService
+from backend.app.services.late_trend import LateTrendService
 from backend.app.services.overtime_approval import OvertimeApprovalService
 from backend.app.services.attendance_export import (
     XLSX_MEDIA_TYPE,
@@ -149,6 +151,16 @@ def export_monthly_attendance_excel(
             )
         },
     )
+
+
+@router.get("/late-trend", response_model=LateTrendResponse)
+def late_trend(
+    days: int = Query(default=30, ge=7, le=90),
+    months: int = Query(default=6, ge=2, le=12),
+    admin=Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    return LateTrendService.build(db, days=days, months=months)
 
 
 @router.get("/{daily_id}", response_model=AttendanceDetailResponse)

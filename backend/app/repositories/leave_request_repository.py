@@ -23,6 +23,12 @@ class LeaveRequestRepository:
         return list(db.execute(stmt).all())
 
     @staticmethod
+    def admin_username(db, admin_id):
+        if admin_id is None:
+            return None
+        return db.scalar(select(AdminUser.username).where(AdminUser.id == admin_id))
+
+    @staticmethod
     def get_by_id(db, leave_id):
         return db.get(LeaveRequest, leave_id)
 

@@ -101,6 +101,21 @@ class Settings:
         self.CORS_ORIGINS = [
             item.strip() for item in origins.split(",") if item.strip()
         ]
+        # Email thông báo cho nhân viên. Để trống SMTP_HOST thì hệ thống
+        # không gửi và ghi nhận trạng thái NOT_CONFIGURED.
+        self.SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+        self.SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+        self.SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
+        self.SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+        # STARTTLS cho cổng 587; đặt SMTP_USE_SSL=true khi dùng cổng 465.
+        self.SMTP_USE_TLS = _get_bool("SMTP_USE_TLS", True)
+        self.SMTP_USE_SSL = _get_bool("SMTP_USE_SSL", False)
+        self.SMTP_TIMEOUT_SECONDS = int(os.getenv("SMTP_TIMEOUT_SECONDS", "15"))
+        self.MAIL_FROM = os.getenv("MAIL_FROM", "").strip() or self.SMTP_USERNAME
+        self.MAIL_FROM_NAME = os.getenv("MAIL_FROM_NAME", "Phòng Hành chính - Nhân sự")
+        self.COMPANY_NAME = os.getenv("COMPANY_NAME", "Công ty Acacy")
+        self.HR_CONTACT_EMAIL = os.getenv("HR_CONTACT_EMAIL", "").strip() or self.MAIL_FROM
+        self.HR_CONTACT_PHONE = os.getenv("HR_CONTACT_PHONE", "").strip()
         self.DEBUG = _get_bool("DEBUG", False)
         self.LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
         self.LOG_HTTP_FRAME_REQUESTS = _get_bool("LOG_HTTP_FRAME_REQUESTS", False)

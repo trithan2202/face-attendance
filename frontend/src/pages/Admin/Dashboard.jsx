@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle, ArrowRightCircle, AlertTriangle, XCircle, ChevronRight } from 'lucide-react';
+import { CheckCircle, ArrowRightCircle, AlertTriangle, XCircle, ChevronRight, TrendingDown, TrendingUp, Minus } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api as mockApi } from '../../services/api';
 import Table from '../../components/ui/Table';
 import Badge from '../../components/ui/Badge';
 import Skeleton from '../../components/ui/Skeleton';
+import { DailyLateChart, MonthlyLateChart } from '../../components/charts/LateTrendCharts';
 
 const StatCard = ({ title, value, icon: Icon, colorClass, isLoading }) => (
   <div className="bg-white p-6 rounded-xl border border-neutral-200 shadow-sm flex items-center gap-4">
@@ -22,9 +23,61 @@ const StatCard = ({ title, value, icon: Icon, colorClass, isLoading }) => (
   </div>
 );
 
+const ChartCard = ({ title, subtitle, children, aside }) => (
+  <div className="bg-white rounded-xl border border-neutral-200 shadow-sm flex flex-col">
+    <div className="px-6 pt-5 pb-2">
+      <h2 className="text-lg font-bold text-neutral-900">{title}</h2>
+      {subtitle && <p className="text-sm text-neutral-500 mt-0.5">{subtitle}</p>}
+      {aside}
+    </div>
+    <div className="px-4 pb-4 mt-auto">{children}</div>
+  </div>
+);
+
+// Green when late minutes went down, red when they went up. The arrow and the
+// wording carry the direction too, so it never relies on colour alone.
+const ChangeBadge = ({ comparison }) => {
+  const { currentMinutes, previousMinutes, changePercent, days } = comparison;
+  let tone = 'bg-neutral-100 text-neutral-600';
+  let Icon = Minus;
+  let label = 'Không đổi';
+  if (changePercent === null) {
+    if (currentMinutes > 0) {
+      tone = 'bg-danger-50 text-danger-700';
+      Icon = TrendingUp;
+      label = 'Tăng (tháng trước không có)';
+    } else {
+      label = 'Chưa có dữ liệu so sánh';
+    }
+  } else if (changePercent > 0) {
+    tone = 'bg-danger-50 text-danger-700';
+    Icon = TrendingUp;
+    label = `Tăng ${changePercent.toLocaleString('vi-VN')}%`;
+  } else if (changePercent < 0) {
+    tone = 'bg-success-50 text-success-700';
+    Icon = TrendingDown;
+    label = `Giảm ${Math.abs(changePercent).toLocaleString('vi-VN')}%`;
+  }
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="text-2xl font-bold text-neutral-900">
+        {currentMinutes.toLocaleString('vi-VN')} <span className="text-base font-medium text-neutral-500">phút</span>
+      </span>
+      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-sm font-semibold ${tone}`}>
+        <Icon className="w-4 h-4" />
+        {label}
+      </span>
+      <span className="w-full text-xs text-neutral-500">
+        {days} ngày đầu tháng này so với cùng kỳ tháng trước ({previousMinutes.toLocaleString('vi-VN')} phút)
+      </span>
+    </div>
+  );
+};
+
 const Dashboard = () => {
   const [stats, setStats] = useState({ checkIn: 0, checkOut: 0, late: 0, missing: 0 });
   const [events, setEvents] = useState([]);
+  const [trend, setTrend] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -32,7 +85,11 @@ const Dashboard = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await mockApi.attendance.list({ date: new Date().toISOString().split('T')[0] });
+      const [data, lateTrend] = await Promise.all([
+        mockApi.attendance.list({ date: new Date().toISOString().split('T')[0] }),
+        mockApi.attendance.lateTrend({ days: 30, months: 6 }),
+      ]);
+      setTrend(lateTrend);
       
       let checkIn = 0, checkOut = 0, late = 0, missing = 0;
       data.forEach(d => {
@@ -100,6 +157,19 @@ const Dashboard = () => {
         <StatCard title="Check-out hôm nay" value={stats.checkOut} icon={ArrowRightCircle} colorClass="bg-primary-500 text-primary-500" isLoading={loading} />
         <StatCard title="Đi trễ" value={stats.late} icon={AlertTriangle} colorClass="bg-warning-500 text-warning-500" isLoading={loading} />
         <StatCard title="Thiếu Check-out" value={stats.missing} icon={XCircle} colorClass="bg-danger-500 text-danger-500" isLoading={loading} />
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <ChartCard title="Xu hướng đi trễ theo ngày" subtitle="Tổng số phút đi trễ mỗi ngày, 30 ngày gần nhất">
+          {loading || !trend ? <Skeleton className="h-60 w-full" /> : <DailyLateChart data={trend.daily} />}
+        </ChartCard>
+        <ChartCard
+          title="So sánh đi trễ theo tháng"
+          subtitle="Tổng số phút đi trễ mỗi tháng, 6 tháng gần nhất"
+          aside={trend && !loading ? <ChangeBadge comparison={trend.comparison} /> : <Skeleton className="h-8 w-48 mt-3" />}
+        >
+          {loading || !trend ? <Skeleton className="h-60 w-full" /> : <MonthlyLateChart data={trend.monthly} />}
+        </ChartCard>
       </div>
 
       <div className="bg-white rounded-xl border border-neutral-200 shadow-sm overflow-hidden">

@@ -16,6 +16,7 @@ from backend.app.schemas import (
     LeaveRequestCreate,
     LeaveRequestResponse,
 )
+from backend.app.services.leave_email import LeaveEmailService
 from backend.app.services.leave_service import LeaveService, leave_dates
 from backend.app.core.logging import log_extra
 
@@ -43,6 +44,9 @@ def _response(leave, employee, created_by):
         created_by=created_by,
         decided_at=leave.decided_at,
         decision_note=leave.decision_note,
+        email_status=leave.email_status,
+        email_sent_at=leave.email_sent_at,
+        email_error=leave.email_error,
         created_at=leave.created_at,
     )
 
@@ -128,11 +132,36 @@ def decide_leave_request(
     if result is None:
         raise _not_found()
     leave, employee, applied, skipped = result
+    if leave.status == "APPROVED":
+        LeaveEmailService.notify_approved(
+            db, leave, employee, admin.username, skipped_days=skipped
+        )
     return LeaveDecisionResponse(
         leave=_response(leave, employee, admin.username),
         applied_days=applied,
         skipped_days=skipped,
+        email_status=leave.email_status,
     )
+
+
+@router.post("/{leave_id}/email", response_model=LeaveRequestResponse)
+def resend_leave_email(
+    leave_id: int,
+    admin=Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Gửi lại email thông báo của một đơn đã duyệt (ví dụ sau khi sửa cấu hình SMTP)."""
+    row = LeaveRequestRepository.get_detail(db, leave_id)
+    if row is None:
+        raise _not_found()
+    leave, employee, created_by = row
+    if leave.status != "APPROVED":
+        raise HTTPException(
+            status_code=409, detail="Chỉ gửi email cho đơn đã được duyệt"
+        )
+    approver = LeaveRequestRepository.admin_username(db, leave.decided_by_admin_id)
+    LeaveEmailService.notify_approved(db, leave, employee, approver or admin.username)
+    return _response(leave, employee, created_by)
 
 
 @router.delete("/{leave_id}", status_code=status.HTTP_204_NO_CONTENT)

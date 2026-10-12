@@ -3,6 +3,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users, Building2, CalendarDays, ClipboardList, CalendarOff, Settings as SettingsIcon, LogOut } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { ToastProvider } from '../components/ui/Toast';
+import logo from '../assets/logo_ACACY.png';
 
 const AdminLayout = () => {
   const { user, logout } = useAuth();
@@ -28,8 +29,9 @@ const AdminLayout = () => {
       <div className="flex h-screen bg-neutral-50 font-sans">
         {/* Sidebar */}
         <aside className="w-64 bg-neutral-900 text-white flex flex-col">
-          <div className="h-16 flex items-center px-6 border-b border-neutral-800">
-            <span className="text-lg font-bold">Hệ thống chấm công</span>
+          <div className="h-16 flex items-center gap-3 px-4 border-b border-neutral-800">
+            <img src={logo} alt="Acacy" className="h-10 w-auto rounded-md shrink-0" />
+            <span className="text-[15px] font-semibold leading-snug text-neutral-100">Hệ thống chấm công</span>
           </div>
           <nav className="flex-1 py-4 flex flex-col gap-1 px-3">
             {navItems.map((item) => (

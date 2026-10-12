@@ -39,6 +39,9 @@ class LeaveRequestResponse(BaseModel):
     created_by: str
     decided_at: datetime | None
     decision_note: str | None
+    email_status: str
+    email_sent_at: datetime | None
+    email_error: str | None
     created_at: datetime
 
 
@@ -46,3 +49,4 @@ class LeaveDecisionResponse(BaseModel):
     leave: LeaveRequestResponse
     applied_days: int
     skipped_days: int
+    email_status: str

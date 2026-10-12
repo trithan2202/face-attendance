@@ -128,6 +128,9 @@ const mapLeave = (leave) => ({
   createdBy: leave.created_by,
   decidedAt: leave.decided_at,
   decisionNote: leave.decision_note,
+  emailStatus: leave.email_status,
+  emailSentAt: leave.email_sent_at,
+  emailError: leave.email_error,
 });
 const leavePayload = (data) => ({
   employee_id: Number(data.employeeId),
@@ -205,6 +208,28 @@ export const api = {
       if (filters.departmentId) params.set('department_id', filters.departmentId);
       const suffix = params.size ? `?${params}` : '';
       return (await request(`/admin/attendance${suffix}`)).map(mapAttendance);
+    },
+    lateTrend: async ({ days = 30, months = 6 } = {}) => {
+      const data = await request(`/admin/attendance/late-trend?days=${days}&months=${months}`);
+      return {
+        daily: data.daily.map((item) => ({
+          date: item.work_date,
+          minutes: item.late_minutes,
+          count: item.late_count,
+        })),
+        monthly: data.monthly.map((item) => ({
+          year: item.year,
+          month: item.month,
+          minutes: item.late_minutes,
+          count: item.late_count,
+        })),
+        comparison: {
+          currentMinutes: data.comparison.current_minutes,
+          previousMinutes: data.comparison.previous_minutes,
+          changePercent: data.comparison.change_percent,
+          days: data.comparison.days,
+        },
+      };
     },
     update: (record, data, reason) => {
       const combine = (value) => value ? `${record.date}T${value}:00` : null;
@@ -334,6 +359,9 @@ export const api = {
       body: JSON.stringify({ status, note: note || null }),
     }),
     delete: (id) => request(`/admin/leave-requests/${id}`, { method: 'DELETE' }),
+    resendEmail: async (id) => mapLeave(
+      await request(`/admin/leave-requests/${id}/email`, { method: 'POST' }),
+    ),
   },
   kiosk: {
     startLiveness: () => request('/kiosk/liveness', { method: 'POST' }),

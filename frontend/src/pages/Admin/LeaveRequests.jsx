@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
-import { Plus, Check, X, Trash2 } from 'lucide-react';
+import { Plus, Check, X, Trash2, Mail, MailCheck, MailX, RotateCw } from 'lucide-react';
 import { api as mockApi } from '../../services/api';
 import { useToast } from '../../components/ui/Toast';
 import Table from '../../components/ui/Table';
@@ -33,6 +33,49 @@ const LEAVE_TYPES = [
   { value: 'OTHER', label: 'Khác' },
 ];
 
+// Thời điểm từ API là UTC không kèm múi giờ.
+const formatSentAt = (value) => (value
+  ? new Date(`${value}Z`).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
+  : '');
+
+const EMAIL_STATUS = {
+  SENT: { label: 'Đã gửi', icon: MailCheck, className: 'bg-success-100 text-success-700' },
+  FAILED: { label: 'Gửi lỗi', icon: MailX, className: 'bg-danger-100 text-danger-700' },
+  NO_EMAIL: { label: 'Không có email', icon: MailX, className: 'bg-warning-100 text-warning-700' },
+  NOT_CONFIGURED: { label: 'Chưa cấu hình', icon: MailX, className: 'bg-warning-100 text-warning-700' },
+};
+
+const EmailStatus = ({ row, onResend, busy }) => {
+  if (row.rawStatus !== 'APPROVED') {
+    return <span className="text-xs text-neutral-400">—</span>;
+  }
+  const config = EMAIL_STATUS[row.emailStatus] || { label: 'Chưa gửi', icon: Mail, className: 'bg-neutral-100 text-neutral-600' };
+  const Icon = config.icon;
+  const title = row.emailStatus === 'SENT' ? `Gửi lúc ${formatSentAt(row.emailSentAt)}` : row.emailError || '';
+  return (
+    <div className="flex items-center gap-1.5">
+      <span title={title} className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${config.className}`}>
+        <Icon className="w-3.5 h-3.5" /> {config.label}
+      </span>
+      <button
+        onClick={() => onResend(row)}
+        disabled={busy}
+        className="p-1 text-neutral-400 hover:text-primary-600 hover:bg-primary-50 rounded disabled:opacity-50"
+        title={row.emailStatus === 'SENT' ? 'Gửi lại email' : 'Thử gửi lại email'}
+      >
+        <RotateCw className={`w-3.5 h-3.5 ${busy ? 'animate-spin' : ''}`} />
+      </button>
+    </div>
+  );
+};
+
+const EMAIL_TOAST = {
+  SENT: ['Đã gửi email thông báo cho nhân viên', 'success'],
+  FAILED: ['Đã duyệt đơn nhưng gửi email thất bại, có thể gửi lại ở cột Email', 'error'],
+  NO_EMAIL: ['Đã duyệt đơn; nhân viên chưa có email nên không gửi thông báo', 'warning'],
+  NOT_CONFIGURED: ['Đã duyệt đơn; chưa cấu hình SMTP nên không gửi email', 'warning'],
+};
+
 const LeaveRequests = () => {
   const [requests, setRequests] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -45,6 +88,7 @@ const LeaveRequests = () => {
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [resendingId, setResendingId] = useState(null);
 
   const { addToast } = useToast();
 
@@ -102,6 +146,8 @@ const LeaveRequests = () => {
           ? ` (${result.skipped_days} ngày đã có chấm công nên được giữ nguyên)`
           : '';
         addToast(`Đã duyệt đơn, ghi nhận ${result.applied_days} ngày nghỉ${skipped}`, 'success');
+        const [message, type] = EMAIL_TOAST[result.email_status] || [];
+        if (message) addToast(message, type);
       } else {
         addToast('Đã từ chối đơn nghỉ phép', 'success');
       }
@@ -112,6 +158,23 @@ const LeaveRequests = () => {
       addToast(err.message || 'Thao tác thất bại', 'error');
     } finally {
       setDecisionBusy(false);
+    }
+  };
+
+  const handleResendEmail = async (row) => {
+    setResendingId(row.id);
+    try {
+      const updated = await mockApi.leave.resendEmail(row.id);
+      setRequests((items) => items.map((item) => (item.id === updated.id ? updated : item)));
+      const [message, type] = EMAIL_TOAST[updated.emailStatus] || [];
+      addToast(
+        updated.emailStatus === 'SENT' ? 'Đã gửi lại email thông báo' : (updated.emailError || message),
+        updated.emailStatus === 'SENT' ? 'success' : type || 'error',
+      );
+    } catch (err) {
+      addToast(err.message || 'Không thể gửi email', 'error');
+    } finally {
+      setResendingId(null);
     }
   };
 
@@ -141,6 +204,9 @@ const LeaveRequests = () => {
       <span className="block max-w-[220px] truncate" title={row.reason}>{row.reason}</span>
     )},
     { header: 'Trạng thái', cell: (row) => <Badge status={row.status}>{statusLabelVi(row.status)}</Badge> },
+    { header: 'Email thông báo', cell: (row) => (
+      <EmailStatus row={row} onResend={handleResendEmail} busy={resendingId === row.id} />
+    )},
     { header: 'Thao tác', cell: (row) => (
       <div className="flex gap-2">
         {row.rawStatus === 'PENDING' && (
@@ -239,6 +305,7 @@ const LeaveRequests = () => {
             <p className="text-xs text-neutral-500">
               Khi duyệt, các ngày trong khoảng (trừ Chủ nhật) sẽ được ghi nhận là nghỉ phép.
               Ngày đã có dữ liệu chấm công thực tế sẽ được giữ nguyên.
+              Khi duyệt, hệ thống gửi email thông báo đến nhân viên.
             </p>
             <div className="flex justify-end gap-3 mt-6 pt-4 border-t">
               <Button variant="ghost" onClick={() => setDecision(null)}>Hủy</Button>

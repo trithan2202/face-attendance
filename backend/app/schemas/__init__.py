@@ -6,6 +6,10 @@ from .attendance import (
     AttendanceDetailResponse,
     AttendanceEventResponse,
     AttendanceSegment,
+    LateTrendComparison,
+    LateTrendDay,
+    LateTrendMonth,
+    LateTrendResponse,
     OvertimeDecisionRequest,
 )
 from .department import DepartmentCreate, DepartmentResponse, DepartmentUpdate

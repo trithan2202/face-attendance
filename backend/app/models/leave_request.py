@@ -32,6 +32,13 @@ class LeaveRequest(Base):
     )
     decided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     decision_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # Kết quả gửi email thông báo cho nhân viên: NONE (chưa gửi), SENT,
+    # FAILED, NO_EMAIL (nhân viên chưa có email), NOT_CONFIGURED (chưa cấu hình SMTP).
+    email_status: Mapped[str] = mapped_column(
+        String(20), default="NONE", server_default="NONE", nullable=False
+    )
+    email_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    email_error: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utc_now, nullable=False
     )

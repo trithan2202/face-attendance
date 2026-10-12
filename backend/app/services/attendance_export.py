@@ -1,12 +1,16 @@
 import calendar
 import io
 from datetime import date, datetime, timedelta
+from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from openpyxl import Workbook
+from openpyxl.drawing.image import Image as XLImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from attendance.attendance_calculator import AttendanceCalculator
+from backend.app.core.config import settings
 from backend.app.repositories.attendance_repository import AttendanceRepository
 from backend.app.services.settings_service import SettingsService
 
@@ -36,6 +40,16 @@ OT_DATE_GROUP_FILL = PatternFill("solid", fgColor="FFC000")
 OT_DATE_FILL = PatternFill("solid", fgColor="FF0000")
 OT_TOTAL_FILL = PatternFill("solid", fgColor="82DC8C")
 OT_NOTE_FILL = PatternFill("solid", fgColor="F2F2F2")
+# Dòng Giờ vào/Giờ ra tô xám để dòng Giờ OT (dòng được cộng) nổi bật.
+OT_PUNCH_FILL = PatternFill("solid", fgColor="BFBFBF")
+NOTE_PAID_FILL = PatternFill("solid", fgColor="8DB4E2")
+NOTE_PAID_ROW_FILL = PatternFill("solid", fgColor="C5D9F1")
+NOTE_INSURANCE_FILL = PatternFill("solid", fgColor="A6A6A6")
+NOTE_INSURANCE_ROW_FILL = PatternFill("solid", fgColor="D9D9D9")
+
+LOGO_PATH = Path(__file__).resolve().parents[1] / "assets" / "logo_ACACY.png"
+# Logo cao 79px, vừa khít 4 dòng cao 15pt (20px) ở góc trên bên trái.
+LOGO_ROWS = 4
 
 
 def _safe_text(value):
@@ -98,6 +112,16 @@ def _overtime_hours(minutes):
     return (max(0, int(minutes or 0)) + 30) // 60
 
 
+def _report_date():
+    # Container chạy giờ UTC; ngày xuất phải theo giờ công ty.
+    return datetime.now(ZoneInfo(settings.TIMEZONE)).date()
+
+
+def _clock(value):
+    """Giờ trong ngày (kiểu time) để Excel hiển thị theo định dạng h:mm."""
+    return value.time().replace(second=0, microsecond=0) if value else None
+
+
 def _overtime_status_label(status):
     return {
         "NONE": "",
@@ -112,30 +136,173 @@ MONTH_ABBR = (
     "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 )
 
-# Ba dòng tiêu đề nằm trên cùng của hai sheet báo cáo tháng: tên bảng, kỳ báo
-# cáo và ngày xuất. Bảng dữ liệu vì vậy bắt đầu từ dòng thứ tư.
-REPORT_HEADER_ROWS = 3
+REPORT_AREA = "HEAD OFFICE"
+
+# Ghi chú ký hiệu ngày công in ở đầu bảng chấm công tháng. Mỗi khối gồm tiêu
+# đề, màu và các dòng (nhãn, ký hiệu); dòng có ký hiệu None là tiêu đề phụ.
+NOTE_BLOCKS = (
+    (
+        "HƯỞNG LƯƠNG", NOTE_PAID_FILL, NOTE_PAID_ROW_FILL, (6, 13), (14, 19),
+        (
+            ("Ngày đi làm bình thường:", "HC"),
+            ("Ngày nghỉ phép:", "Điền từ số 0.5 trở lên"),
+            ("Kết hôn:", "KH"),
+            ("Tang tế:", "TA"),
+        ),
+    ),
+    (
+        "CHẾ ĐỘ BHXH", NOTE_INSURANCE_FILL, NOTE_INSURANCE_ROW_FILL, (21, 28), (29, 30),
+        (
+            ("Bản thân ốm:", "OM"),
+            ("Con ốm:", "CO"),
+            ("Thai sản:", "TS"),
+            ("Dưỡng sức sau khi sinh:", "DS"),
+        ),
+    ),
+    (
+        "CHẾ ĐỘ BHXH", NOTE_INSURANCE_FILL, NOTE_INSURANCE_ROW_FILL, (32, 36), (37, 37),
+        (
+            ("Khám thai", "KT"),
+            ("Sẩy thai", "ST"),
+            ("KHÔNG LƯƠNG", None),
+            ("Nghỉ không lương:", "0"),
+        ),
+    ),
+)
+
+
+def _add_logo(sheet):
+    """Đặt logo công ty ở góc trên bên trái, chiếm các dòng 1..LOGO_ROWS."""
+    for row in range(1, LOGO_ROWS + 1):
+        sheet.row_dimensions[row].height = 15
+    if not LOGO_PATH.exists():
+        return
+    image = XLImage(str(LOGO_PATH))
+    image.anchor = "A1"
+    sheet.add_image(image)
+
+
+def _styled_range(sheet, row, first_column, last_column, value, fill=None, font=None,
+                  horizontal="left"):
+    """Ghi một ô (gộp nếu trải nhiều cột) và kẻ viền cho mọi ô trong vùng gộp."""
+    if last_column > first_column:
+        sheet.merge_cells(
+            start_row=row, start_column=first_column,
+            end_row=row, end_column=last_column,
+        )
+    for column in range(first_column, last_column + 1):
+        cell = sheet.cell(row=row, column=column)
+        cell.border = GRID_BORDER
+        if fill is not None:
+            cell.fill = fill
+    cell = sheet.cell(row=row, column=first_column, value=value)
+    cell.font = font or Font(name="Times New Roman", size=10)
+    cell.alignment = Alignment(horizontal=horizontal, vertical="center")
+    return cell
+
+
+def _add_timesheet_header(sheet, year, month):
+    """Logo, thông tin bảng chấm công và khối ghi chú ký hiệu.
+
+    Trả về số dòng khối tiêu đề chiếm, bảng dữ liệu bắt đầu ngay sau đó.
+    """
+    _add_logo(sheet)
+    last_day = calendar.monthrange(year, month)[1]
+    label_font = Font(name="Times New Roman", bold=True, size=11)
+
+    info_rows = (
+        (6, "BẢNG CHẤM CÔNG THÁNG", f"{month}/{year}"),
+        (7, "KHU VỰC:", REPORT_AREA),
+    )
+    for row, label, value in info_rows:
+        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        label_cell = sheet.cell(row=row, column=1, value=label)
+        label_cell.font = Font(
+            name="Times New Roman", bold=True, size=11,
+            color="FF0000" if row == 6 else "000000",
+        )
+        label_cell.alignment = Alignment(horizontal="left", vertical="center")
+        value_cell = sheet.cell(row=row, column=3, value=value)
+        value_cell.fill = SUBHEADER_FILL
+        value_cell.font = label_font
+        value_cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    # Cột C và E đủ rộng cho ngày; các cột ngày công chỉ rộng hơn 4 nên đặt
+    # ngày vào đó sẽ hiện thành "#####".
+    for row, label, value, second_label, second_value in (
+        (8, "Từ ngày:", date(year, month, 1), "Đến ngày:", date(year, month, last_day)),
+        (9, "Ngày xuất BC:", _report_date(), None, None),
+    ):
+        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
+        for column, content in (
+            (1, label), (3, value), (4, second_label), (5, second_value)
+        ):
+            if content is None:
+                continue
+            cell = sheet.cell(row=row, column=column, value=content)
+            cell.font = Font(name="Times New Roman", size=11, bold=column in {1, 4})
+            cell.alignment = Alignment(
+                horizontal="center" if column == 3 else "left", vertical="center"
+            )
+            if isinstance(content, date):
+                cell.number_format = "dd/mm/yyyy"
+
+    note_label = sheet.cell(row=6, column=4, value="GHI CHÚ:")
+    note_label.font = Font(name="Times New Roman", bold=True, size=11, underline="single")
+    note_label.alignment = Alignment(horizontal="right", vertical="center")
+
+    title_row = 5
+    for title, fill, row_fill, label_span, code_span, entries in NOTE_BLOCKS:
+        _styled_range(
+            sheet, title_row, label_span[0], code_span[1], title, fill,
+            Font(name="Times New Roman", bold=True, size=10), "center",
+        )
+        for offset, (label, code) in enumerate(entries, start=1):
+            row = title_row + offset
+            if code is None:
+                _styled_range(
+                    sheet, row, label_span[0], code_span[1], label, fill,
+                    Font(name="Times New Roman", bold=True, size=10), "center",
+                )
+                continue
+            _styled_range(
+                sheet, row, label_span[0], label_span[1], label, row_fill,
+                Font(name="Times New Roman", italic=True, size=10),
+            )
+            _styled_range(
+                sheet, row, code_span[0], code_span[1], code, None,
+                Font(name="Times New Roman", bold=True, size=10),
+            )
+
+    for row in range(5, 10):
+        sheet.row_dimensions[row].height = 16
+    return 10
 
 
 def _add_report_header(sheet, year, month):
-    """Tiêu đề "BẢNG CHẤM CÔNG AUG.26" cùng kỳ báo cáo và ngày xuất."""
-    last_day = calendar.monthrange(year, month)[1]
+    """Logo rồi tới tiêu đề "BẢNG CHẤM CÔNG AUG.26", kỳ báo cáo và ngày xuất.
 
-    sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=4)
+    Trả về số dòng khối tiêu đề chiếm, bảng dữ liệu bắt đầu ngay sau đó.
+    """
+    _add_logo(sheet)
+    last_day = calendar.monthrange(year, month)[1]
+    title_row = LOGO_ROWS + 1
+
+    sheet.merge_cells(
+        start_row=title_row, start_column=1, end_row=title_row, end_column=4
+    )
     title = sheet.cell(
-        row=1,
+        row=title_row,
         column=1,
         value=f"BẢNG CHẤM CÔNG {MONTH_ABBR[month - 1]}.{year % 100:02d}",
     )
     title.font = Font(name="Times New Roman", bold=True, size=14)
     title.alignment = Alignment(horizontal="left", vertical="center")
 
-    # Nhãn nằm ở A:B đã gộp, ngày nằm ở cột C và E - đây là những cột đủ rộng
-    # trên cả hai sheet; cột ngày công chỉ rộng hơn 4 nên đặt ngày vào đó sẽ
-    # hiện thành "#####".
+    # Nhãn nằm ở A:B đã gộp, ngày nằm ở cột C và E.
     info_rows = (
-        (2, "Từ ngày:", date(year, month, 1), "Đến ngày:", date(year, month, last_day)),
-        (3, "Ngày xuất BC:", date.today(), None, None),
+        (title_row + 1, "Từ ngày:", date(year, month, 1), "Đến ngày:", date(year, month, last_day)),
+        (title_row + 2, "Ngày xuất BC:", _report_date(), None, None),
     )
     for row, label, value, second_label, second_value in info_rows:
         sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=2)
@@ -152,9 +319,10 @@ def _add_report_header(sheet, year, month):
             if isinstance(content, date):
                 cell.number_format = "dd/mm/yyyy"
 
-    sheet.row_dimensions[1].height = 22
-    sheet.row_dimensions[2].height = 18
-    sheet.row_dimensions[3].height = 18
+    sheet.row_dimensions[title_row].height = 22
+    sheet.row_dimensions[title_row + 1].height = 18
+    sheet.row_dimensions[title_row + 2].height = 18
+    return title_row + 2
 
 
 def _new_workbook(title):
@@ -281,10 +449,9 @@ def build_monthly_workbook(
     workbook = _new_workbook(f"Báo cáo công tháng {month}/{year}")
     sheet = workbook.create_sheet(f"Thang {month:02d}-{year}")
     sheet.sheet_view.showGridLines = False
-    _add_report_header(sheet, year, month)
 
     # Bảng nằm dưới khối tiêu đề: hai dòng tiêu đề cột rồi mới tới nhân viên.
-    top = REPORT_HEADER_ROWS
+    top = _add_timesheet_header(sheet, year, month)
     head_row, day_row, first_data_row = top + 1, top + 2, top + 3
     sheet.freeze_panes = f"F{first_data_row}"
 
@@ -401,11 +568,13 @@ def build_monthly_workbook(
 
     sheet.row_dimensions[head_row].height = 25
     sheet.row_dimensions[day_row].height = 22
-    widths = {1: 6, 2: 16, 3: 28, 4: 18, 5: 13, 37: 13}
+    # Cột B rộng đủ cho nhãn "BẢNG CHẤM CÔNG THÁNG" gộp ở A:B; cột ngày rộng
+    # đủ cho ký hiệu dài nhất "0.5HC".
+    widths = {1: 6, 2: 24, 3: 28, 4: 18, 5: 13, 37: 13}
     for column, width in widths.items():
         sheet.column_dimensions[get_column_letter(column)].width = width
     for column in range(6, 37):
-        sheet.column_dimensions[get_column_letter(column)].width = 4.3
+        sheet.column_dimensions[get_column_letter(column)].width = 5.5
 
     legend_row = max(5, len(employee_rows) + 5) + top
     sheet.merge_cells(start_row=legend_row, start_column=1, end_row=legend_row, end_column=12)
@@ -431,14 +600,25 @@ def build_monthly_workbook(
     return _save(workbook)
 
 
+OT_ROWS_PER_EMPLOYEE = 3
+
+
+def _merge_block(sheet, first_row, last_row, column):
+    """Gộp một cột qua các dòng của một nhân viên và kẻ viền toàn khối."""
+    sheet.merge_cells(
+        start_row=first_row, start_column=column, end_row=last_row, end_column=column
+    )
+    for row in range(first_row, last_row + 1):
+        sheet.cell(row=row, column=column).border = GRID_BORDER
+
+
 def _add_overtime_sheet(workbook, attendance_rows, year, month):
     sheet = workbook.create_sheet("Công OT")
     sheet.sheet_view.showGridLines = False
-    _add_report_header(sheet, year, month)
+    top = _add_report_header(sheet, year, month)
 
-    top = REPORT_HEADER_ROWS
     head_row, day_row, first_data_row = top + 1, top + 2, top + 3
-    sheet.freeze_panes = f"E{first_data_row}"
+    sheet.freeze_panes = f"F{first_data_row}"
 
     # Only overtime an admin has signed off on is billable, so the sheet is the
     # approved set rather than everything the clock produced.
@@ -449,26 +629,25 @@ def _add_overtime_sheet(workbook, attendance_rows, year, month):
     ]
     overtime_dates = sorted({daily.work_date for daily, _employee, _shift in overtime_rows})
     employee_data = {}
-    overtime_hours = {}
+    overtime_days = {}
     for daily, employee, _shift in overtime_rows:
         employee_data.setdefault(employee.id, employee)
-        # Bảng OT chỉ tính theo giờ tròn nên lưu thẳng số giờ đã làm tròn, ô
-        # vừa hiện đúng con số vừa cộng được bằng SUM.
-        overtime_hours[(employee.id, daily.work_date)] = _overtime_hours(
-            daily.overtime_minutes
-        )
+        overtime_days[(employee.id, daily.work_date)] = daily
     employees = sorted(
         employee_data.values(),
         key=lambda employee: employee.employee_code,
     )
 
     day_count = max(1, len(overtime_dates))
-    first_day_column = 5
+    time_column = 5
+    first_day_column = 6
     last_day_column = first_day_column + day_count - 1
     total_column = last_day_column + 1
     note_column = total_column + 1
 
-    static_headers = ["STT", "Mã NV", "TÊN NHÂN VIÊN", "PHÒNG BAN"]
+    # Cột E chỉ chứa nhãn Giờ vào/Giờ ra/Giờ OT của từng nhân viên nên không
+    # cần tiêu đề.
+    static_headers = ["STT", "Mã NV", "TÊN NHÂN VIÊN", "PHÒNG BAN", None]
     for column, value in enumerate(static_headers, start=1):
         sheet.merge_cells(
             start_row=head_row,
@@ -523,49 +702,73 @@ def _add_overtime_sheet(workbook, attendance_rows, year, month):
         cell.border = GRID_BORDER
 
     if employees:
-        for row_index, employee in enumerate(employees, start=first_data_row):
+        first_letter = get_column_letter(first_day_column)
+        last_letter = get_column_letter(last_day_column)
+        for index, employee in enumerate(employees):
+            # Mỗi nhân viên chiếm 3 dòng: giờ vào, giờ ra và số giờ OT theo ngày.
+            in_row = first_data_row + index * OT_ROWS_PER_EMPLOYEE
+            out_row, hours_row = in_row + 1, in_row + 2
             info_values = [
-                row_index - first_data_row + 1,
+                index + 1,
                 _safe_text(employee.employee_code),
                 _safe_text(employee.full_name),
                 _department_name(employee),
             ]
             for column, value in enumerate(info_values, start=1):
-                cell = sheet.cell(row=row_index, column=column, value=value)
+                _merge_block(sheet, in_row, hours_row, column)
+                cell = sheet.cell(row=in_row, column=column, value=value)
                 cell.font = Font(name="Times New Roman", size=11)
                 cell.alignment = Alignment(
                     horizontal="center" if column in {1, 4} else "left",
                     vertical="center",
                 )
+
+            for row, label in (
+                (in_row, "Giờ vào"), (out_row, "Giờ ra"), (hours_row, "Giờ OT")
+            ):
+                cell = sheet.cell(row=row, column=time_column, value=label)
+                cell.font = Font(name="Times New Roman", size=11)
+                if row != hours_row:
+                    cell.fill = OT_PUNCH_FILL
+                cell.alignment = Alignment(horizontal="left", vertical="center")
                 cell.border = GRID_BORDER
+                sheet.row_dimensions[row].height = 18
 
             for offset, overtime_date in enumerate(overtime_dates):
                 column = first_day_column + offset
-                cell = sheet.cell(
-                    row=row_index,
-                    column=column,
-                    value=overtime_hours.get((employee.id, overtime_date)),
+                daily = overtime_days.get((employee.id, overtime_date))
+                values = (
+                    (in_row, _clock(daily.first_check_in) if daily else None, "h:mm"),
+                    (out_row, _clock(daily.last_check_out) if daily else None, "h:mm"),
+                    # Bảng OT chỉ tính theo giờ tròn nên lưu thẳng số giờ đã làm
+                    # tròn, ô vừa hiện đúng con số vừa cộng được bằng SUM.
+                    (
+                        hours_row,
+                        _overtime_hours(daily.overtime_minutes) if daily else None,
+                        "0",
+                    ),
                 )
-                cell.number_format = "0"
-                cell.font = Font(name="Times New Roman", size=11)
-                # Canh giữa cho thẳng cột với tiêu đề ngày phía trên.
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border = GRID_BORDER
+                for row, value, number_format in values:
+                    cell = sheet.cell(row=row, column=column, value=value)
+                    cell.number_format = number_format
+                    cell.font = Font(name="Times New Roman", size=11)
+                    if row != hours_row:
+                        cell.fill = OT_PUNCH_FILL
+                    # Canh giữa cho thẳng cột với tiêu đề ngày phía trên.
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = GRID_BORDER
 
-            first_letter = get_column_letter(first_day_column)
-            last_letter = get_column_letter(last_day_column)
-            total_cell = sheet.cell(row=row_index, column=total_column)
-            total_cell.value = f"=SUM({first_letter}{row_index}:{last_letter}{row_index})"
+            _merge_block(sheet, in_row, hours_row, total_column)
+            total_cell = sheet.cell(row=in_row, column=total_column)
+            total_cell.value = f"=SUM({first_letter}{hours_row}:{last_letter}{hours_row})"
             total_cell.number_format = "0"
             total_cell.font = Font(name="Times New Roman", bold=True, size=11)
             total_cell.alignment = Alignment(horizontal="center", vertical="center")
-            total_cell.border = GRID_BORDER
 
-            note_cell = sheet.cell(row=row_index, column=note_column)
+            _merge_block(sheet, in_row, hours_row, note_column)
+            note_cell = sheet.cell(row=in_row, column=note_column)
             note_cell.font = Font(name="Times New Roman", size=11)
-            note_cell.border = GRID_BORDER
-            sheet.row_dimensions[row_index].height = 23
-        last_row = len(employees) + day_row
+        last_row = day_row + len(employees) * OT_ROWS_PER_EMPLOYEE
     else:
         last_row = first_data_row
         sheet.merge_cells(
@@ -584,7 +787,10 @@ def _add_overtime_sheet(workbook, attendance_rows, year, month):
 
     sheet.row_dimensions[head_row].height = 30
     sheet.row_dimensions[day_row].height = 24
-    widths = {1: 7, 2: 18, 3: 32, 4: 22, total_column: 14, note_column: 18}
+    widths = {
+        1: 7, 2: 18, 3: 32, 4: 22, time_column: 10,
+        total_column: 14, note_column: 18,
+    }
     for column, width in widths.items():
         sheet.column_dimensions[get_column_letter(column)].width = width
     # Cột ngày chỉ cần đủ cho tiêu đề "dd/mm" và số giờ tăng ca bên dưới; để

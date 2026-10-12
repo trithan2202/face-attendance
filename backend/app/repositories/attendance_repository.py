@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import exists, func, or_, select
 
 from backend.app.models import (
     AdminUser,
@@ -72,6 +72,27 @@ class AttendanceRepository:
         if status:
             stmt = stmt.where(AttendanceDaily.status == status)
         return list(db.execute(stmt).all())
+
+    @staticmethod
+    def late_totals_by_date(db, date_from, date_to):
+        """Sum late minutes per work date; dates without late arrivals are omitted."""
+        stmt = (
+            select(
+                AttendanceDaily.work_date,
+                func.sum(AttendanceDaily.late_minutes),
+                func.count(AttendanceDaily.id),
+            )
+            .where(
+                AttendanceDaily.work_date >= date_from,
+                AttendanceDaily.work_date <= date_to,
+                AttendanceDaily.is_late.is_(True),
+            )
+            .group_by(AttendanceDaily.work_date)
+        )
+        return {
+            work_date: (int(minutes or 0), int(count))
+            for work_date, minutes, count in db.execute(stmt).all()
+        }
 
     @staticmethod
     def get_daily_detail(db, daily_id, for_update=False):

@@ -81,3 +81,31 @@ class AttendanceAdjustmentResponse(BaseModel):
     before_data: dict
     after_data: dict
     created_at: datetime
+
+
+class LateTrendDay(BaseModel):
+    work_date: date
+    late_minutes: int
+    late_count: int
+
+
+class LateTrendMonth(BaseModel):
+    year: int
+    month: int
+    late_minutes: int
+    late_count: int
+
+
+class LateTrendComparison(BaseModel):
+    """Month-to-date late minutes against the same days of the previous month."""
+
+    current_minutes: int
+    previous_minutes: int
+    change_percent: float | None
+    days: int
+
+
+class LateTrendResponse(BaseModel):
+    daily: list[LateTrendDay]
+    monthly: list[LateTrendMonth]
+    comparison: LateTrendComparison

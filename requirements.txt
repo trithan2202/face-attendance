@@ -16,6 +16,8 @@ python-multipart
 # Required by FastAPI/Starlette TestClient for API integration tests.
 httpx2
 openpyxl>=3.1,<4
+# openpyxl needs Pillow to embed the company logo in Excel reports.
+pillow
 # MediaPipe 1.x exposes only the Tasks API. The liveness implementation uses
 # the legacy solutions.face_mesh API, which is available in the 0.10 line.
 mediapipe==0.10.21
