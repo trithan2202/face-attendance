@@ -33,6 +33,8 @@ const LEAVE_TYPES = [
   { value: 'OTHER', label: 'Khác' },
 ];
 
+const formatDate = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+
 // Thời điểm từ API là UTC không kèm múi giờ.
 const formatSentAt = (value) => (value
   ? new Date(`${value}Z`).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' })
@@ -193,15 +195,22 @@ const LeaveRequests = () => {
     { header: 'Nhân viên', cell: (row) => (
       <div>
         <div className="font-medium text-neutral-900">{row.employeeName}</div>
-        <div className="text-xs text-neutral-500">{row.employeeCode}</div>
+        <div className="text-neutral-500">{row.employeeCode}</div>
       </div>
     )},
     { header: 'Loại nghỉ', accessorKey: 'leaveTypeLabel' },
-    { header: 'Từ ngày', accessorKey: 'startDate' },
-    { header: 'Đến ngày', accessorKey: 'endDate' },
-    { header: 'Số ngày', accessorKey: 'totalDays' },
+    { header: 'Thời gian nghỉ', cell: (row) => (
+      <div>
+        <div className="text-neutral-900">
+          {row.startDate === row.endDate
+            ? formatDate(row.startDate)
+            : `${formatDate(row.startDate)} – ${formatDate(row.endDate)}`}
+        </div>
+        <div className="text-neutral-500">{row.totalDays} ngày</div>
+      </div>
+    )},
     { header: 'Lý do', cell: (row) => (
-      <span className="block max-w-[220px] truncate" title={row.reason}>{row.reason}</span>
+      <span className="block min-w-[120px] max-w-[200px] whitespace-normal line-clamp-2" title={row.reason}>{row.reason}</span>
     )},
     { header: 'Trạng thái', cell: (row) => <Badge status={row.status}>{statusLabelVi(row.status)}</Badge> },
     { header: 'Email thông báo', cell: (row) => (
@@ -250,7 +259,7 @@ const LeaveRequests = () => {
         />
       </div>
 
-      <Table columns={columns} data={requests} isLoading={loading} emptyMessage="Chưa có đơn nghỉ phép nào." />
+      <Table columns={columns} data={requests} isLoading={loading} emptyMessage="Chưa có đơn nghỉ phép nào." dense />
 
       {/* Modal tạo đơn */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Tạo đơn nghỉ phép">
@@ -293,7 +302,7 @@ const LeaveRequests = () => {
           <div className="space-y-4 mt-4">
             <div className="bg-neutral-50 p-3 rounded-md border border-neutral-200 space-y-1">
               <p className="text-sm font-medium">Nhân viên: {decision.employeeName} ({decision.employeeCode})</p>
-              <p className="text-sm text-neutral-500">{decision.leaveTypeLabel}: {decision.startDate} → {decision.endDate} ({decision.totalDays} ngày)</p>
+              <p className="text-sm text-neutral-500">{decision.leaveTypeLabel}: {formatDate(decision.startDate)} → {formatDate(decision.endDate)} ({decision.totalDays} ngày)</p>
               <p className="text-sm text-neutral-500">Lý do: {decision.reason}</p>
             </div>
             <Textarea
